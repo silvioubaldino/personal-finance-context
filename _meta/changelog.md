@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2025-01-01
+updated: 2026-06-25
 owner: <nome>
 ---
 
@@ -27,4 +27,7 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Filled in GLO, PROD-001, REQ-001 and ARCH from product/code analysis (vision, personas,
+  functional and non-functional requirements, business rules and the C4 container view for the
+  features already in production); renamed `Transfer` to `InternalTransfer` in GLO per review.
 - Documentation initialized from the scaffold.
