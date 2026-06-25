@@ -24,7 +24,7 @@ superseded_by: null
 |----|-----------|---------------------|--------------------|
 | RF-01 | Registrar `Movement` (entrada/saída) com valor, data, `Wallet` e `Category`/`Subcategory` | Must | Usuário cria um `Movement` em poucos cliques; categoria e subcategoria são obrigatórias; pode marcar como pago ou pendente |
 | RF-02 | Controlar `Wallet`s e visualizar `Balance` | Must | Usuário cria/edita/exclui `Wallet`s; `Balance` reflete a soma dos `Movement`s pagos |
-| RF-03 | Transferir valores entre `Wallet`s (`Transfer`) | Must | A transferência gera duas `Movement`s ligadas por `pair_id`, sem afetar entradas/saídas do período |
+| RF-03 | Transferir valores entre `Wallet`s (`InternalTransfer`) | Must | A transferência gera duas `Movement`s ligadas por `pair_id`, sem afetar entradas/saídas do período |
 | RF-04 | Criar `Movement`s recorrentes | Must | `RecurrentMovement` gera `Movement`s futuros automaticamente conforme periodicidade configurada |
 | RF-05 | Planejar (`Estimate`) por `Category`/`Subcategory` e comparar com o realizado | Must | Usuário define meta de valor por categoria/mês; app mostra realizado vs. planejado |
 | RF-06 | Controlar `CreditCard`, parcelamento e `Invoice` | Must | Compra parcelada distribui valores nas faturas seguintes; a fatura só afeta o `Balance` da `Wallet` quando paga |
@@ -49,7 +49,7 @@ superseded_by: null
 - RN-01: Toda `Movement` deve ter `Category` e `Subcategory` (obrigatório para relatórios e `Estimate`).
 - RN-02: `Movement` em `CreditCard` não afeta o `Balance` da `Wallet` — só impacta quando a `Invoice` correspondente é paga.
 - RN-03: Usuários do plano `free` têm `Limits` (padrão: 2 `Wallet`s, 1 `CreditCard`, 50 `Movement`s/mês, 3 recorrências/mês — configuráveis); usuários `plus` não têm limite.
-- RN-04: `Transfer` é sempre duas `Movement`s ligadas por `pair_id` (uma saída, uma entrada) e nunca conta como entrada/saída isolada no resultado do período.
+- RN-04: `InternalTransfer` é sempre duas `Movement`s ligadas por `pair_id` (uma saída, uma entrada) e nunca conta como entrada/saída isolada no resultado do período.
 - RN-05: Cancelamento de `Subscription` mantém acesso `plus` até o fim do ciclo de cobrança vigente (downgrade gracioso).
 
 ## Restrições
