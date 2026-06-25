@@ -7,7 +7,7 @@ created: 2025-01-01
 updated: 2026-06-25
 owner: Silvio Ubaldino
 parents: [PROD-001]
-children: []
+children: [AYD-002]
 related: [GLO]
 tags: []
 superseded_by: null
@@ -16,8 +16,9 @@ superseded_by: null
 # Requisitos
 
 > Produto já em produção. Esta versão documenta os requisitos **já construídos e em uso**
-> (extraídos da análise do código), não um MVP por lançar. `children` fica vazio até existirem
-> `AYD`s reais por feature — hoje só existe o `AYD-001` de exemplo no scaffold.
+> (extraídos da análise do código), não um MVP por lançar. `children` lista os `AYD`s reais
+> já existentes por feature — o primeiro é `AYD-002` (monitoramento/observabilidade); o
+> `AYD-001` no scaffold é só exemplo.
 
 ## Funcionais (RF)
 | ID | Requisito | Prioridade (MoSCoW) | Critério de aceite |

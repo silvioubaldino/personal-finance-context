@@ -28,6 +28,10 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
+  `biz_*` business KPI catalog, SLO targets and rollout phases), the first real AYD,
+  sourced from `personal-finance`'s informal design notes (`AyDmonitoramento.md` /
+  `diagramainframonitoramento.md`); linked as a child of REQ-001.
 - Filled in GLO, PROD-001, REQ-001 and ARCH from product/code analysis (vision, personas,
   functional and non-functional requirements, business rules and the C4 container view for the
   features already in production); renamed `Transfer` to `InternalTransfer` in GLO per review.

@@ -8,7 +8,7 @@ updated: 2026-06-25
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: []
-related: [GLO]
+related: [GLO, AYD-002]
 tags: [architecture, c4]
 superseded_by: null
 ---
@@ -78,8 +78,10 @@ flowchart TB
 ```
 
 > A pilha de observabilidade (OTel Collector + Grafana Cloud + Cloud Monitoring + Cloud
-> Logging) já está em produção (ver `CHANGELOG@api` v1.18.0–v1.20.0); a decisão/justificativa
-> ainda não foi formalizada como `ADR` — pendente (ver `RNF-04@context`).
+> Logging) já está em produção (ver `CHANGELOG@api` v1.18.0–v1.20.0). O desenho e os
+> contratos (convenção `biz_*`, roteamento por sinal, KPIs/SLOs) estão em `AYD-002`; a
+> decisão/justificativa arquitetural em si ainda não foi formalizada como `ADR` —
+> pendente (ver `RNF-04@context`).
 
 ## Containers e integrações (legenda)
 
