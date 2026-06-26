@@ -3,7 +3,7 @@ id: MANIFEST
 type: meta
 title: Manifesto / Índice do produto
 status: approved
-updated: 2026-06-25
+updated: 2026-06-26
 owner: Silvio Ubaldino
 ---
 
@@ -14,15 +14,16 @@ owner: Silvio Ubaldino
 ## Estado do produto
 - **Produto:** Personal Finance
 - **Repos:** context (este) · api (`personal-finance`) · web (`personal-finance-frontend-v2`) · mobile (`personal-finance-mobile`)
-- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; primeiro AYD real — AYD-002, monitoramento — registrado; ROAD e ADRs ainda pendentes)
+- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento e AYD-003 análises financeiras (em design, ainda sem SPEC); ROAD e ADRs ainda pendentes)
 
 ## Grafo de documentos
 | Camada | ID | Documento | Status | Refina | Detalhado por |
 |--------|----|-----------|--------|--------|----------------|
 | Produto      | PROD-001 | Visão & estratégia | draft    | —        | REQ-001 |
-| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002 |
+| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003 |
 | Design       | AYD-001  | (exemplo) Feature  | draft    | REQ-001  | SPEC-001@api, SPEC-001@web |
 | Design       | AYD-002  | Monitoramento e observabilidade | draft | REQ-001 | — (nenhuma SPEC formal ainda) |
+| Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | — (nenhuma SPEC ainda) |
 | Roadmap      | ROAD-001 | Roadmap            | draft    | PROD-001 | — |
 | Decisão prod | PDR-001  | (exemplo)          | accepted | —        | — |
 | Decisão arq  | ADR-001  | (exemplo)          | accepted | —        | — |
@@ -40,7 +41,8 @@ PROD-001
    ├─ REQ-001 ─ AYD-001 (exemplo) ─┬─ SPEC-001@api ─ PLAN-001@api
    │                               ├─ SPEC-001@web ─ PLAN-001@web
    │                               └─ SPEC-001@mobile ─ PLAN-001@mobile
-   │          └ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
+   │          ├ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
+   │          └ AYD-003 (análises financeiras, real, em design) ─ (sem SPEC ainda)
    └─ ROAD-001
 (PDR / ADR / ARCH / GLO referenciados transversalmente por todos)
  ARCH = topologia vigente (C4 vivo); atualizado quando entra/sai serviço ou integração.
