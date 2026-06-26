@@ -3,9 +3,8 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-06-25
-updated: 2026-06-25
-owner: <nome>
+updated: 2026-06-26
+owner: Silvio Ubaldino
 ---
 
 # Changelog — Context
@@ -28,6 +27,8 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-003 (financial analytics design: trends over time, budget vs. actual,
+  savings-rate KPIs), covering api, web and mobile; linked as a child of REQ-001.
 - Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
   `biz_*` business KPI catalog, SLO targets and rollout phases), the first real AYD,
   sourced from `personal-finance`'s informal design notes (`AyDmonitoramento.md` /
