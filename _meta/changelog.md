@@ -27,11 +27,8 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-- Added AYD-003 (financial analytics design: income×expense over time, budget×actual
-  for the selected month, and savings-rate/period KPIs from a single aggregator
-  endpoint); originally drafted covering api+mobile only, extended in this revision to
-  also cover web (`personal-finance-frontend-v2`) with an equivalent role — design
-  skeleton only, no SPEC written yet in any repo; linked as a child of REQ-001.
+- Added AYD-003 (financial analytics design: trends over time, budget vs. actual,
+  savings-rate KPIs), covering api, web and mobile; linked as a child of REQ-001.
 - Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
   `biz_*` business KPI catalog, SLO targets and rollout phases), the first real AYD,
   sourced from `personal-finance`'s informal design notes (`AyDmonitoramento.md` /
