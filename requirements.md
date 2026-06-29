@@ -4,10 +4,10 @@ type: requirements
 title: Requisitos do produto
 status: draft
 created: 2025-01-01
-updated: 2026-06-26
+updated: 2026-06-29
 owner: Silvio Ubaldino
 parents: [PROD-001]
-children: [AYD-002, AYD-003]
+children: [AYD-002, AYD-003, AYD-004]
 related: [GLO]
 tags: []
 superseded_by: null
@@ -17,8 +17,9 @@ superseded_by: null
 
 > Produto já em produção. Esta versão documenta os requisitos **já construídos e em uso**
 > (extraídos da análise do código), não um MVP por lançar. `children` lista os `AYD`s reais
-> já existentes por feature — `AYD-002` (monitoramento/observabilidade) e `AYD-003`
-> (análises financeiras, em design); o `AYD-001` no scaffold é só exemplo.
+> já existentes por feature — `AYD-002` (monitoramento/observabilidade), `AYD-003` (análises
+> financeiras, em design) e `AYD-004` (import de fatura de cartão, refina RF-07, em design);
+> o `AYD-001` no scaffold é só exemplo.
 
 ## Funcionais (RF)
 | ID | Requisito | Prioridade (MoSCoW) | Critério de aceite |

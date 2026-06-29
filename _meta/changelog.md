@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-06-26
+updated: 2026-06-29
 owner: Silvio Ubaldino
 ---
 
@@ -27,6 +27,10 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-004 (credit card invoice import design: layered statement/invoice
+  differentiation, `confirm-invoice` contract reusing the existing `InvoiceUseCase`,
+  phased rollout), covering api, web and mobile; sourced from `personal-finance`'s
+  `AyDimportfatura.md` design notes; linked as a child of REQ-001.
 - Added AYD-003 (financial analytics design: trends over time, budget vs. actual,
   savings-rate KPIs), covering api, web and mobile; linked as a child of REQ-001.
 - Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
