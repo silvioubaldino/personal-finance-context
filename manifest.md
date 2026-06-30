@@ -3,7 +3,7 @@ id: MANIFEST
 type: meta
 title: Manifesto / Índice do produto
 status: approved
-updated: 2026-06-29
+updated: 2026-06-30
 owner: Silvio Ubaldino
 ---
 
@@ -24,7 +24,7 @@ owner: Silvio Ubaldino
 | Design       | AYD-001  | (exemplo) Feature  | draft    | REQ-001  | SPEC-001@api, SPEC-001@web |
 | Design       | AYD-002  | Monitoramento e observabilidade | draft | REQ-001 | — (nenhuma SPEC formal ainda) |
 | Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | — (nenhuma SPEC ainda) |
-| Design       | AYD-004  | Import de fatura de cartão de crédito | draft | REQ-001 | — (nenhuma SPEC ainda) |
+| Design       | AYD-004  | Import de fatura de cartão de crédito | draft | REQ-001 | SPEC-001@api, SPEC-001@web, SPEC-001@mobile |
 | Roadmap      | ROAD-001 | Roadmap            | draft    | PROD-001 | — |
 | Decisão prod | PDR-001  | (exemplo)          | accepted | —        | — |
 | Decisão arq  | ADR-001  | (exemplo)          | accepted | —        | — |

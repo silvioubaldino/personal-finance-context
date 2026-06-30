@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-06-29
+updated: 2026-06-30
 owner: Silvio Ubaldino
 ---
 
@@ -27,6 +27,7 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added SPEC-001 in api, web and mobile for AYD-004 (invoice import): api covers Phases 1–3 (domain types, `ConfirmInvoice` usecase reusing `InvoiceUseCase`, three Gemini prompts statement/invoice/auto, `confirm-invoice` endpoint, 22 passing tests); web and mobile cover Phase 4 (type alignment to AYD-004 contract, API layer, hook/state extensions, `StatementReviewScreen` bifurcation, entry points in invoice screens); one open issue in web (`creditCardId` availability in summary card).
 - Added AYD-004 (credit card invoice import design: layered statement/invoice
   differentiation, `confirm-invoice` contract reusing the existing `InvoiceUseCase`,
   phased rollout), covering api, web and mobile; sourced from `personal-finance`'s

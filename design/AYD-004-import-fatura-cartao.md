@@ -4,11 +4,11 @@ type: design
 title: Import de fatura de cartão de crédito (Invoice Import)
 status: draft
 created: 2026-06-25
-updated: 2026-06-29
+updated: 2026-06-30
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
-children: []
+children: [SPEC-001@api, SPEC-001@web, SPEC-001@mobile]
 related: [AYD-002, GLO]
 tags: [invoice, statement, import, ai]
 superseded_by: null
@@ -40,9 +40,9 @@ usuário, isoladamente, são confiáveis o bastante com bancos heterogêneos).
 
 | Repo | Papel nesta feature | Status do desenho | SPEC gerada |
 |------|---------------------|--------------------|-------------|
-| api | Generaliza `/v2/statements/{extract,classify}` para também detectar/extrair fatura (prompt dedicado, parcelas, metadados); novo endpoint `POST /v2/statements/confirm-invoice` que reusa a `InvoiceUseCase` já existente | Detalhado — decisões de desenho confirmadas (§"Decisões de design"), pronto para implementação faseada | nenhuma ainda |
-| mobile | Hoje só importa extrato (escopado por `wallet_id`) via aba "import" do `MovementModal` → `StatementReviewScreen`. Precisa: enviar `source_type`, tratar `warnings`/parcelas na revisão, bifurcar o confirm para `confirm-invoice` com `credit_card_id`, e expor a entrada "Importar fatura" a partir da tela de cartões | Esqueleto — guia de integração geral (§"Guia de integração"), sem tela/componente desenhado | nenhuma ainda |
-| web | Hoje só importa extrato (escopado por `wallet_id`) via `StatementImportModal`, acionado pelo FAB global `AddMovementButton`. Mesmas mudanças de contrato do mobile; entrada natural é o card de fatura na página de cartões | Esqueleto — guia de integração geral (§"Guia de integração"), sem tela/componente desenhado | nenhuma ainda |
+| api | Generaliza `/v2/statements/{extract,classify}` para também detectar/extrair fatura (prompt dedicado, parcelas, metadados); novo endpoint `POST /v2/statements/confirm-invoice` que reusa a `InvoiceUseCase` já existente | Implementado (Phases 1–3): domain types, `ConfirmInvoice` usecase, 3 prompts Gemini (statement/invoice/auto), handler `confirm-invoice`, bootstrap wiring, 22 testes passando | SPEC-001@api |
+| mobile | Hoje só importa extrato (escopado por `wallet_id`) via aba "import" do `MovementModal` → `StatementReviewScreen`. Precisa: enviar `source_type`, tratar `warnings`/parcelas na revisão, bifurcar o confirm para `confirm-invoice` com `credit_card_id`, e expor a entrada "Importar fatura" a partir da tela de cartões | Implementado (Phase 4): tipos alinhados ao contrato, `confirmInvoice`, hook `useConfirmInvoice`, `StatementReviewScreen` com bifurcação e badge de parcelas, entry point em `InvoiceDetailsModal`, strings i18n | SPEC-001@mobile |
+| web | Hoje só importa extrato (escopado por `wallet_id`) via `StatementImportModal`, acionado pelo FAB global `AddMovementButton`. Mesmas mudanças de contrato do mobile; entrada natural é o card de fatura na página de cartões | Implementado (Phase 4): tipos alinhados, `extractMovements`/`confirmInvoice`, hook estendido com `resolvedMode`/`typeWarning`, modal com alerta de mismatch e badge de parcelas, botão "Importar fatura" em `invoice-summary-card`; issue aberta: `creditCardId` no card de resumo (ver SPEC-001@web) | SPEC-001@web |
 
 > `children` fica vazio: nenhuma `SPEC` formal foi escrita ainda em nenhum repo. Este AYD fixa
 > o contrato e os papéis; a SPEC@api (e, na sequência, SPEC@web/SPEC@mobile) é o próximo passo
@@ -507,11 +507,9 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 
 ## Fora de escopo / questões em aberto
 
-- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar as Fases 1–3.
-- [ ] **SPEC@web / SPEC@mobile** — formalizar o desenho de tela/componente da Fase 4 (hoje só
-      o guia genérico de integração e o mapa de código atual, sem rota/label/wireframe
-      definidos); resolver a divergência de tipos `ExtractedMovement` apontada em
-      §"Implementação por repo" como parte da SPEC.
+- [x] **SPEC@api** — SPEC-001@api criada; Phases 1–3 implementadas e testadas (22 testes passando).
+- [x] **SPEC@web / SPEC@mobile** — SPEC-001@web e SPEC-001@mobile criadas; Phase 4 implementada; divergência de tipos `ExtractedMovement` resolvida (alinhados ao contrato desta seção).
+- [ ] **`creditCardId` no `invoice-summary-card`@web** — card de resumo total não expõe o ID do cartão; solução a definir na SPEC@web (passar via props do `credit-cards/page.tsx` ou reestruturar o componente).
 - [ ] **Fase 5 (endurecimento)** — validação de total e métricas de negócio do import de
       fatura; pendente, não bloqueia as Fases 1–4.
 - [ ] **Heurísticas estruturais** (§"Estratégia de diferenciação") — mencionadas como reforço
