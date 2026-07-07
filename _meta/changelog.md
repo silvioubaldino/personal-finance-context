@@ -27,6 +27,12 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-002 (observability): unified web and mobile telemetry onto a single
+  ingestion contract (`POST /v1/telemetry` → sidecar), dropping the web's direct
+  `@vercel/otel`→Grafana path and the mobile Crashlytics/GA4/BigQuery client-side plan
+  from the design and diagram; web now emits perceived request latency
+  (`app_http_client_request_duration_seconds`); trace preparation (Tempo, Fase 6) kept
+  for the future.
 - Added AYD-004 (credit card invoice import design: layered statement/invoice
   differentiation, `confirm-invoice` contract reusing the existing `InvoiceUseCase`,
   phased rollout), covering api, web and mobile; sourced from `personal-finance`'s
