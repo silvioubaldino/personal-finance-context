@@ -4,7 +4,7 @@ type: design
 title: Monitoramento e observabilidade (logs, métricas e KPIs de negócio)
 status: draft
 created: 2026-06-25
-updated: 2026-06-25
+updated: 2026-07-07
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -39,8 +39,8 @@ nesta fase.
 | Repo | Papel nesta feature | SPEC gerada |
 |------|---------------------|-------------|
 | api | Fonte da verdade de logs, métricas de saúde (RED/USE) e KPIs de negócio (`biz_*`); roda o sidecar OTel Collector que roteia cada sinal ao destino certo; expõe `POST /v1/telemetry` para receber lotes de telemetria do mobile | nenhuma ainda |
-| web | RUM já nativo via Vercel (Web Vitals/Analytics); bridge planejado dos KPIs `biz_*` e do header de correlação via `lib/api/fetcher.ts` | nenhuma ainda |
-| mobile | Hoje sem telemetria própria (Firebase só para Auth); ponto de entrada já existe no backend (`POST /v1/telemetry`, shipped em v1.20.0) aguardando o cliente que o consome; adoção de crash/analytics e bridge dos `biz_*` ainda pendente no app | nenhuma ainda |
+| web | Emite métricas operacionais via `POST /v1/telemetry` (mesmo contrato do mobile) a partir do ponto único `lib/api/fetcher.ts`; hoje instrumenta a latência percebida (`app_http_client_request_duration_seconds`) + header de correlação `X-Request-ID`; KPIs `biz_*` de funil são follow-up | nenhuma ainda |
+| mobile | Emite métricas + logs via `POST /v1/telemetry` (endpoint shipped em v1.20.0) a partir de `src/lib/api/fetcher.ts`; Firebase usado só para Auth; bridge dos `biz_*` de funil ainda pendente no app | nenhuma ainda |
 
 > `children` fica vazio porque nenhuma `SPEC` formal foi escrita ainda em nenhum repo —
 > o que existe hoje (pacote `pkg/metrics`, middleware RED, sidecar, endpoint
@@ -50,20 +50,28 @@ nesta fase.
 
 ## Por que web e mobile entram em `affects`
 
-- **web** já participa hoje de forma nativa e independente (Vercel Speed
-  Insights/Analytics coletando Web Vitals sob consentimento LGPD) e está desenhado
-  para, na Fase 4 do plano, emitir os mesmos KPIs `biz_*` e o header de correlação
-  `X-Request-ID` a partir do `fetcher.ts`. Ainda não tem `@vercel/otel`/`web-vitals`
-  integrados.
-- **mobile** ainda não tem nenhuma instrumentação própria (sem Crashlytics,
-  Performance Monitoring ou GA4 — Firebase é usado só para Auth), mas o **backend já
-  shippou um endpoint dedicado para isso** (`POST /v1/telemetry`, PR#209, v1.20.0),
-  o que é evidência concreta de que o mobile é parte do desenho, não uma ideia
-  futura abstrata — falta apenas o lado cliente.
+- **web** emite telemetria pelo mesmo ponto de ingestão do mobile
+  (`POST /v1/telemetry`), a partir do wrapper único `lib/api/fetcher.ts`. Hoje já
+  envia a métrica de latência percebida (`app_http_client_request_duration_seconds`)
+  e injeta o header de correlação `X-Request-ID`; o restante do catálogo (`biz_*` de
+  funil, Web Vitals) é follow-up.
+- **mobile** consome o mesmo endpoint (`POST /v1/telemetry`, shipped em PR#209,
+  v1.20.0), enviando métricas e logs em lote a partir de `src/lib/api/fetcher.ts`.
+  Firebase é usado só para Auth.
 
-Por isso `affects: [api, web, mobile]` está correto mesmo com adoção parcial: o
-contrato já reserva o papel dos três repos, ainda que web e mobile estejam, na
-prática, só parcialmente instrumentados.
+Por isso `affects: [api, web, mobile]` está correto: os três repos compartilham **um
+único contrato de ingestão** — o backend recebe em `/v1/telemetry` e reencaminha ao
+sidecar, e web/mobile só variam no conjunto de sinais que cada um emite. Saíram do
+desenho as telemetrias de terceiros que iriam para um destino próprio (Crashlytics/GA4
+no mobile e o caminho direto `@vercel/otel`→Grafana no web); tudo o que deve chegar ao
+Grafana/Cloud Monitoring converge para o pipeline OTel via a API.
+
+**Vercel RUM (só web) permanece.** O `Speed Insights`/`Analytics` da Vercel segue
+configurado e ativo (Web Vitals + page views, sob consentimento LGPD) como **painel
+nativo próprio** — o que saiu foi usá-lo como fonte de métricas *bridgeada para o
+Grafana*. Os dados da Vercel continuam no dashboard da Vercel; não são importados para o
+Grafana nesta fase. Para ter Web Vitals no painel único do Grafana, a via é **emiti-los
+via `/v1/telemetry`** (métricas `app_*`) — follow-up (ver `ARCH@context`).
 
 ## Contrato (fonte da verdade — não pode ser violado por nenhum repo)
 
@@ -74,10 +82,13 @@ nunca redefinida localmente em uma SPEC de serviço.
 1. **OTLP é o protocolo comum** entre app e coletor. O backend expõe um receiver OTLP
    local (`localhost:4318` HTTP / `4317` gRPC) servido pelo sidecar; nenhum app fala
    diretamente com o backend de observabilidade final (Grafana/Cloud Monitoring) —
-   sempre via o **sidecar OTel Collector** do Cloud Run. Web/mobile, que não correm no
-   mesmo Cloud Run, chegam à mesma malha por `@vercel/otel` (web, direto a OTLP do
-   Grafana Cloud) ou via `POST /v1/telemetry` no backend (mobile, que reencaminha ao
-   pipeline OTel).
+   sempre via o **sidecar OTel Collector** do Cloud Run. Web e mobile, que não correm no
+   mesmo Cloud Run, chegam à mesma malha por um **ponto de ingestão único no backend**
+   (`POST /v1/telemetry`), que recebe um lote de métricas/logs e o reencaminha ao
+   pipeline OTel. Esse contrato de ingestão é **o mesmo para os dois clientes** — não há
+   mais caminho direto do web ao Grafana Cloud (`@vercel/otel` fica reservado apenas para
+   os traces da fase futura). Consolidar tudo em `/v1/telemetry` mantém o roteamento por
+   sinal, os gates de cardinalidade e o segredo do Grafana num lugar só (o sidecar).
 2. **Prefixo `biz_` é reservado para KPI de negócio.** Qualquer métrica com esse
    prefixo é automaticamente roteada pelo Collector ao Cloud Monitoring (24 meses de
    retenção) em vez do Grafana. Os três repos devem usar exatamente os mesmos nomes
@@ -90,7 +101,7 @@ nunca redefinida localmente em uma SPEC de serviço.
 4. **Proibido usar `user_id`, ID de entidade (cupom, rota com ID etc.) como label de
    métrica.** Cardinalidade alta estoura tanto os 10k de séries do Grafana Free
    quanto os 150 MiB/mês do Cloud Monitoring. DAU/WAU/MAU e qualquer métrica por
-   usuário individual são feitas via eventos/logs (Cloud Logging) ou GA4 — nunca via
+   usuário individual são feitas via eventos/logs (Cloud Logging) — nunca via
    label de métrica OTel. Esta regra é gate de revisão de PR em qualquer repo que
    instrumente uma métrica nova.
 5. **KPI de negócio é counter/gauge de baixa cardinalidade com push infrequente
@@ -116,50 +127,41 @@ nunca redefinida localmente em uma SPEC de serviço.
 
 ```mermaid
 flowchart TB
-    subgraph CLI["Clientes (RUM + correlação)"]
+    subgraph CLI["Clientes"]
         direction TB
-        WEB["Web — frontend-v2 (Next.js / Vercel)<br/>@vercel/otel + web-vitals (a integrar)"]
-        MOB["Mobile — Expo/RN<br/>crash/analytics a adotar<br/>eventos biz_* (a integrar)"]
+        WEB["Web — frontend-v2 (Next.js / Vercel)<br/>métricas via POST /v1/telemetry<br/>(latência percebida app_*; biz_* de funil — follow-up)"]
+        MOB["Mobile — Expo/RN<br/>métricas + logs via POST /v1/telemetry"]
     end
 
     subgraph CR["Cloud Run — serviço api (multi-contêiner)"]
         direction TB
-        APP["Contêiner APP (Go + Gin)<br/>ingress :PORT<br/>OTel SDK + Zap (JSON)<br/>POST /v1/telemetry (mobile)"]
+        APP["Contêiner APP (Go + Gin)<br/>ingress :PORT<br/>OTel SDK + Zap (JSON)<br/>POST /v1/telemetry (web + mobile)"]
         COL["Sidecar — OTel Collector<br/>recebe OTLP em localhost:4318<br/>roteia por pipeline"]
-        APP -- "OTLP localhost<br/>histogramas RED/USE + biz_*" --> COL
+        APP -- "OTLP localhost<br/>histogramas RED/USE + app_* + biz_*" --> COL
     end
 
     subgraph GCP["Google Cloud"]
         direction TB
         LOG["Cloud Logging<br/>(logs JSON)"]
         MON["Cloud Monitoring<br/>custom metrics biz_* (24 meses)<br/>+ métricas nativas Cloud Run"]
-        BQ["BigQuery<br/>(export GA4 do mobile, futuro)"]
         SM["Secret Manager<br/>(token Grafana Cloud)"]
-    end
-
-    subgraph FB["Firebase / GA4 (mobile, a adotar)"]
-        CRASH["Crashlytics"]
-        GA4["Analytics GA4"]
-    end
-
-    subgraph VC["Vercel (web, já presente)"]
-        VAN["Vercel Analytics +<br/>Speed Insights (Web Vitals)"]
     end
 
     subgraph GRA["Grafana Cloud Free — single pane of glass"]
         direction TB
-        GMET["Prometheus<br/>(histogramas de saúde, 14d)"]
+        GMET["Prometheus<br/>(histogramas de saúde + app_*, 14d)"]
         GTEMPO["Tempo<br/>(traces — fase futura)"]
         DASH["Dashboards unificados"]
         GMET --> DASH
         GTEMPO --> DASH
     end
 
-    WEB -- "HTTPS + user_token<br/>+ X-Request-ID" --> APP
-    MOB -- "HTTPS + user_token<br/>+ X-Request-ID" --> APP
-    MOB -. "POST /v1/telemetry<br/>(metrics + logs batch)" .-> APP
+    WEB -- "POST /v1/telemetry<br/>(metrics batch, anônimo)" --> APP
+    MOB -- "POST /v1/telemetry<br/>(metrics + logs batch)" --> APP
+    WEB -. "HTTPS + user_token + X-Request-ID<br/>(requests de negócio)" .-> APP
+    MOB -. "HTTPS + user_token + X-Request-ID<br/>(requests de negócio)" .-> APP
 
-    COL -- "otlphttp · histogramas" --> GMET
+    COL -- "otlphttp · histogramas + app_*" --> GMET
     COL -- "exporter googlecloud · biz_*" --> MON
     COL -. "exporter (futuro) · traces" .-> GTEMPO
     SM -- "token via env var" --> COL
@@ -167,33 +169,24 @@ flowchart TB
     APP -- "stdout JSON (severity, trace_id)" --> LOG
     CR -- "métricas nativas" --> MON
 
-    WEB -. "OTLP (Web Vitals + biz_*) — a integrar" .-> GMET
-    WEB -- "RUM nativo (já existe)" --> VAN
-    MOB -. "crashes — a adotar" .-> CRASH
-    MOB -. "eventos GA4 — a adotar" .-> GA4
-    GA4 -. "export nativo" .-> BQ
-
     MON -- "datasource" --> DASH
     LOG -- "datasource" --> DASH
-    BQ -. "datasource (futuro)" .-> DASH
 
     classDef gcp fill:#E8F0FE,stroke:#4285F4,color:#1a1a1a;
     classDef grafana fill:#FFF3E0,stroke:#F46800,color:#1a1a1a;
-    classDef firebase fill:#FFF8E1,stroke:#FFCA28,color:#1a1a1a;
-    classDef vercel fill:#F5F5F5,stroke:#000000,color:#1a1a1a;
     classDef run fill:#E6F4EA,stroke:#34A853,color:#1a1a1a;
     classDef client fill:#EDE7F6,stroke:#673AB7,color:#1a1a1a;
 
-    class LOG,MON,BQ,SM gcp;
+    class LOG,MON,SM gcp;
     class GMET,GTEMPO,DASH grafana;
-    class CRASH,GA4 firebase;
-    class VAN vercel;
     class APP,COL run;
     class WEB,MOB client;
 ```
 
-> Linhas pontilhadas marcam o que ainda **não** está integrado no lado cliente
-> (web/mobile) — ver "Fora de escopo / questões em aberto".
+> Linhas sólidas = fluxo de telemetria vigente: **web e mobile enviam pelo mesmo
+> ponto de ingestão** (`POST /v1/telemetry`), que reencaminha ao sidecar. Linhas
+> pontilhadas = requests de negócio (correlação por `X-Request-ID`) e o pipeline de
+> **traces (fase futura)** — ver "Fora de escopo / questões em aberto".
 
 ### Detalhe — roteamento de sinais no sidecar
 
@@ -265,7 +258,7 @@ de 150 MiB/mês — cabe com folga mesmo dobrando o catálogo.
 | 1 — Logs padronizados | JSON forçado em produção, `severity` compatível com Cloud Logging, `trace_id`/`span_id`, log de panic estruturado, campos canônicos | Concluída (v1.18.0) |
 | 2 — Métricas de saúde + sidecar | `pkg/metrics` (OTel SDK), middleware RED, `/healthz`/`/readyz`, sidecar OTel Collector no Cloud Run | Concluída (v1.18.0–v1.19.0) |
 | 3 — Métricas de negócio | KPIs `biz_*` instrumentados nos usecases/bootstrap, roteamento para Cloud Monitoring, dashboard de Negócio | Concluída (v1.19.0) |
-| 4 — Web + Mobile | Web: `@vercel/otel`+`web-vitals`→OTLP e `X-Request-ID` no `fetcher.ts`. Mobile: endpoint `POST /v1/telemetry` já shippado (v1.20.0) no backend; falta o cliente mobile adotar crash/analytics e emitir os eventos | **Parcial** — só o lado backend do mobile (endpoint de ingestão) e o RUM nativo do web (Vercel) existem hoje |
+| 4 — Web + Mobile | Contrato de ingestão único (`POST /v1/telemetry`) para os dois clientes. Web: métrica de latência percebida (`app_http_client_request_duration_seconds`) + `X-Request-ID` no `fetcher.ts`. Mobile: endpoint shippado (v1.20.0), cliente enviando métricas/logs | **Parcial** — web enviando latência percebida e mobile consumindo o endpoint; catálogo `biz_*`/UX de cada cliente é follow-up |
 | 5 — Alertas & SLOs | SLOs formalizados (acima); alertas no Grafana (5xx, p95, crash-free %, falha de job, queda de MRR) | Pendente |
 | 6 — Trace | Tracing OTel → Grafana Tempo, correlação log↔trace | Pendente (baixa prioridade) |
 
@@ -289,21 +282,14 @@ de 150 MiB/mês — cabe com folga mesmo dobrando o catálogo.
 
 - [ ] **ADR formal da decisão de observabilidade** — ainda não escrito (ver seção
       acima). Próximo passo natural após este AYD.
-- [ ] **Tracing distribuído (Fase 6)** — explicitamente baixa prioridade; Grafana
-      Tempo como destino já está previsto no roteamento do Collector, mas nenhum
-      span é emitido hoje.
-- [ ] **Adoção de crash/analytics no mobile** — Crashlytics (via
-      `@react-native-firebase/*`) ou Sentry React Native; decisão entre as duas
-      ainda não tomada. Sem isso, não há crash-free % nem funil de produto no
-      mobile.
-- [ ] **Adoção de GA4 no mobile** (DAU/MAU, retenção, funil) com export para
-      BigQuery e datasource no Grafana — não existe hoje; mobile usa Firebase
-      apenas para Auth.
-- [ ] **Bridge do web via `@vercel/otel` + `web-vitals`** — pendente; hoje o web só
-      tem o RUM nativo da Vercel (Analytics/Speed Insights), sem ponte para o
-      Grafana nem emissão de `biz_*`/`X-Request-ID`.
-- [ ] **Cliente mobile para `POST /v1/telemetry`** — o endpoint já existe no
-      backend (v1.20.0), mas nenhum código no repo mobile o chama ainda.
+- [ ] **Tracing distribuído (Fase 6)** — explicitamente baixa prioridade, mas a
+      **preparação é mantida**: Grafana Tempo já está previsto no roteamento do
+      Collector, o `@vercel/otel` no web e o `X-Request-ID` no `fetcher.ts` de cada
+      cliente já reservam o ponto único onde o `traceparent` entra sem mudar o código
+      cliente. Nenhum span é emitido hoje.
+- [ ] **Catálogo `biz_*`/UX por cliente** — web e mobile hoje só emitem sinais
+      operacionais (latência percebida, métricas/logs). Os KPIs de funil e Web Vitals
+      via `/v1/telemetry` ainda não foram instrumentados.
 - [ ] **Alertas e SLOs formais no Grafana** (Fase 5) — os SLOs estão definidos
       acima como meta, mas os alertas ainda não foram configurados.
 - [ ] **Cobrança de alerting do Cloud Monitoring** a partir de ~set/2026
