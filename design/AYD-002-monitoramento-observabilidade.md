@@ -61,9 +61,17 @@ nesta fase.
 
 Por isso `affects: [api, web, mobile]` está correto: os três repos compartilham **um
 único contrato de ingestão** — o backend recebe em `/v1/telemetry` e reencaminha ao
-sidecar, e web/mobile só variam no conjunto de sinais que cada um emite. Não há mais
-telemetria própria de terceiros no lado cliente (Crashlytics/GA4/Vercel-para-métricas
-saíram do desenho); tudo converge para o pipeline OTel via a API.
+sidecar, e web/mobile só variam no conjunto de sinais que cada um emite. Saíram do
+desenho as telemetrias de terceiros que iriam para um destino próprio (Crashlytics/GA4
+no mobile e o caminho direto `@vercel/otel`→Grafana no web); tudo o que deve chegar ao
+Grafana/Cloud Monitoring converge para o pipeline OTel via a API.
+
+**Vercel RUM (só web) permanece.** O `Speed Insights`/`Analytics` da Vercel segue
+configurado e ativo (Web Vitals + page views, sob consentimento LGPD) como **painel
+nativo próprio** — o que saiu foi usá-lo como fonte de métricas *bridgeada para o
+Grafana*. Os dados da Vercel continuam no dashboard da Vercel; não são importados para o
+Grafana nesta fase. Para ter Web Vitals no painel único do Grafana, a via é **emiti-los
+via `/v1/telemetry`** (métricas `app_*`) — follow-up (ver `ARCH@context`).
 
 ## Contrato (fonte da verdade — não pode ser violado por nenhum repo)
 
