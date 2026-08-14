@@ -27,6 +27,9 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): dropped the four period KPIs, added credit card
+  invoice totals stacked by card and an expense-count distribution by weekday, and required
+  a labelled currency axis on the money bar charts; linked SPEC-002@api and SPEC-002@mobile.
 - Updated AYD-002 + ARCH (observability): unified web and mobile telemetry onto a single
   ingestion contract (`POST /v1/telemetry` → sidecar), dropping the web's direct
   `@vercel/otel`→Grafana path and the mobile Crashlytics/GA4/BigQuery client-side plan

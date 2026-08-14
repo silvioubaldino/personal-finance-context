@@ -4,11 +4,11 @@ type: design
 title: Análises financeiras (visão ao longo do tempo)
 status: draft
 created: 2026-06-25
-updated: 2026-06-26
+updated: 2026-08-14
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
-children: []
+children: [SPEC-002@api, SPEC-002@mobile]
 related: [GLO]
 tags: [analytics, dashboard]
 superseded_by: null
@@ -16,36 +16,36 @@ superseded_by: null
 
 # AYD-003: Análises financeiras (visão ao longo do tempo)
 
-> **Nota de status:** esta feature está em design — nenhuma `SPEC` foi escrita ainda em
-> nenhum repo, e nenhum dos três repos tem código desta feature na branch de trabalho
-> atual. O desenho de **api** e **mobile** veio de uma sessão de design já detalhada
-> (incluindo um mapa de arquivos planejado); o papel do **web** foi adicionado nesta
-> revisão e é só um esqueleto — sem rota, nome de menu ou componentes definidos. Ao
-> implementar, abra a SPEC/PLAN no repo correspondente; este AYD fixa o contrato e os
-> papéis, não a lista de arquivos.
+> **Nota de status:** api e mobile já implementam esta feature (PRs abertos
+> `personal-finance#212` e `personal-finance-mobile#35`), agora formalizados em
+> `SPEC-002@api` e `SPEC-002@mobile`. O **web** continua sem implementação: nem tela, nem
+> hook, nem chamada ao endpoint — permanece em `affects` porque consome o mesmo contrato
+> quando for construído, mas ainda não tem SPEC.
 
 ## Objetivo
 
-Hoje a Dashboard mostra só o mês corrente. Esta feature adiciona uma tela de
-**Análises** que dá ao usuário uma visão financeira **ao longo do tempo**, com três
-visualizações a partir de um único endpoint agregador no backend:
+A Dashboard mostra só o mês corrente. Esta feature adiciona uma tela de **Análises** que dá
+ao usuário uma visão financeira **ao longo do tempo**, a partir de um único endpoint
+agregador no backend:
 
 1. **Renda vs Despesa** — série mensal (barras pareadas) ao longo do período.
 2. **Orçado vs Realizado** — comparativo do mês selecionado (reusa `Estimate`).
-3. **KPIs** — taxa de poupança, saldo do período e médias mensais de renda/despesa.
+3. **Faturas de cartão** — total de `Invoice` por mês, empilhado por `CreditCard`.
+4. **Despesas por dia da semana** — distribuição percentual da **quantidade** de `Movement`s
+   de despesa por dia da semana (ex.: "46% das compras acontecem na sexta").
+5. **KPIs** — receita e despesa totais do período.
 
-"Realizado" = `Movement`s **pagos** (mesma semântica do `Balance`). Despesas mantêm
-sinal **negativo** em todo o fluxo, nos três repos.
+"Realizado" = `Movement`s **pagos** (mesma semântica do `Balance`), com uma exceção
+deliberada na distribuição por dia da semana (§ Decisões, #7). Despesas mantêm sinal
+**negativo** em todo o fluxo, nos três repos.
 
 ## Repos afetados e papéis
 
-| Repo | Papel nesta feature | Status do desenho | SPEC gerada |
-|------|---------------------|--------------------|-------------|
-| api | Agrega `Movement`s e `Estimate`s existentes (sem nova tabela/migração) num único endpoint por período; aplica isolamento por `user_id` | Detalhado (feature clean-arch `dashboard`: domain → usecase → infra/api → bootstrap) | nenhuma ainda |
-| mobile | Consome o contrato; tela "Análises" acessada pelo menu **Mais**; só formata/desenha o que a api devolve, sem agregação no cliente | Detalhado | nenhuma ainda |
-| web | Consome o **mesmo contrato**; tela equivalente como item de primeiro nível na sidebar (sem a restrição de espaço do mobile) | Esqueleto — proposto nesta revisão, sem desenho fino | nenhuma ainda |
-
-> `children` fica vazio: nenhuma SPEC formal foi escrita ainda em nenhum repo.
+| Repo | Papel nesta feature | Estado | SPEC |
+|------|---------------------|--------|------|
+| api | Agrega `Movement`s, `Estimate`s e `Invoice`s existentes (sem nova tabela/migração) num único endpoint por período; isolamento por `user_id` | Implementado | `SPEC-002@api` |
+| mobile | Consome o contrato; tela "Análises" acessada pelo menu **Mais**; só formata/desenha o que a api devolve, sem agregação no cliente | Implementado | `SPEC-002@mobile` |
+| web | Consome o **mesmo contrato**; tela equivalente como item de primeiro nível na sidebar | **Não implementado** | — |
 
 ## Contrato (fonte da verdade)
 
@@ -72,11 +72,26 @@ Response (`200`):
       "expense": { "budgeted": -3000, "realized": -3200 }
     }
   },
-  "kpis": {
-    "total_income": 30000, "total_expense": -19200,
-    "avg_monthly_income": 5000, "avg_monthly_expense": -3200,
-    "period_net": 10800, "savings_rate": 0.36
-  }
+  "credit_card_invoices": {
+    "cards": [
+      { "credit_card_id": "0f1c…", "name": "Nubank" },
+      { "credit_card_id": "7ab2…", "name": "Itaú" }
+    ],
+    "series": [
+      {
+        "month": 6, "year": 2026, "total": -2100,
+        "by_card": [
+          { "credit_card_id": "0f1c…", "amount": -1400 },
+          { "credit_card_id": "7ab2…", "amount": -700 }
+        ]
+      }
+    ]
+  },
+  "expense_weekday_distribution": [
+    { "weekday": 0, "count": 3,  "percentage": 0.06 },
+    { "weekday": 5, "count": 23, "percentage": 0.46 }
+  ],
+  "kpis": { "total_income": 30000, "total_expense": -19200 }
 }
 ```
 
@@ -86,95 +101,97 @@ Semântica:
 |---|---|
 | `monthly_series[]` | 1 entrada por mês do span (meses sem `Movement` vêm zerados → eixo contínuo). `income`/`expense` = soma de pagos; `net = income + expense` |
 | `current_month.budget` | mês de `to`. `budgeted` vem do `Estimate`; `realized` = pagos do mês (reusa lógica teto/piso do `Balance`) |
-| `kpis.avg_*` | total ÷ nº de meses do período |
-| `kpis.savings_rate` | `period_net / total_income` (**0** quando `total_income ≤ 0`) |
-| sinais | despesas sempre **negativas** |
+| `credit_card_invoices.cards[]` | Todo `CreditCard` com pelo menos uma `Invoice` no período. Ordenado por `name`; é a legenda/ordem de empilhamento canônica |
+| `credit_card_invoices.series[]` | 1 entrada por mês do span (mesmo eixo de `monthly_series`, meses sem fatura zerados). Uma `Invoice` cai no mês do seu **`due_date`** (§ Decisões, #8). `by_card[]` traz **todos** os cartões de `cards[]`, com `0` onde não houve fatura, para o empilhamento não “pular” cor. `total` = soma de `by_card[].amount` |
+| `expense_weekday_distribution[]` | Sempre **7 entradas**, `weekday` 0=domingo … 6=sábado (mesma numeração de `time.Weekday`). `count` = quantidade de `Movement`s de despesa; `percentage` = `count / total de despesas do período` (fração 0–1, **0** quando não há despesa) |
+| `kpis` | Só `total_income` e `total_expense` do período |
+| sinais | despesas e faturas sempre **negativas** |
 
 Erros: `from`/`to` em formato inválido ou período inválido (`period.Validate()`) →
 `400` (`WrapInvalidInput`); falha de repositório → `500`.
 
-Este mesmo contrato serve **api → mobile** e **api → web**; nenhum repo redefine campo
-ou semântica localmente (regra de linkagem, `conventions.md` §5).
+Este mesmo contrato serve **api → mobile** e **api → web**; nenhum repo redefine campo ou
+semântica localmente (regra de linkagem, `conventions.md` §5).
+
+### Removido nesta revisão
+
+`kpis` deixou de expor `avg_monthly_income`, `avg_monthly_expense`, `period_net` e
+`savings_rate` — os quatro cartões de KPI (receita média, despesa média, saldo do período,
+taxa de poupança) saíram da tela por decisão de produto. São **breaking changes** no payload;
+como a feature ainda não chegou a produção em nenhum cliente, não há versionamento a fazer.
 
 ## Fluxo cross-repo
 
 ```mermaid
 sequenceDiagram
   participant M as Mobile (AnalyticsScreen)
-  participant W as Web (página Análises)
+  participant W as Web (não implementado)
   participant A as API
 
   M->>A: GET /v2/dashboard/summary?from&to (user_token)
-  A-->>M: { monthly_series, current_month, kpis }
-  W->>A: GET /v2/dashboard/summary?from&to (user_token)
-  A-->>W: { monthly_series, current_month, kpis }
-  Note over M,W: Mesmo payload; cada repo só formata/desenha — nenhuma agregação no cliente.
+  A-->>M: { monthly_series, current_month, credit_card_invoices,<br/>expense_weekday_distribution, kpis }
+  W-->>A: (consumirá o mesmo contrato quando existir)
+  Note over M,W: Cada repo só formata/desenha — nenhuma agregação no cliente.
 ```
 
 ## Consumidores
 
-### Mobile (detalhado)
+### Mobile (implementado)
 
 ```
 AnalyticsScreen
    └─ useDashboardSummary(from, to)          (src/hooks/use-dashboard.ts)
         └─ fetchDashboardSummary             (src/lib/api/dashboard.ts → fetcher)
              └─ GET /v2/dashboard/summary
-   ├─ FinancialKpiCards        ← kpis
-   ├─ IncomeExpenseBarChart    ← monthly_series
-   └─ BudgetVsActualChart      ← current_month.budget
+   ├─ FinancialKpiCards         ← kpis (receita total, despesa total)
+   ├─ IncomeExpenseBarChart     ← monthly_series
+   ├─ BudgetVsActualChart       ← current_month.budget
+   ├─ CreditCardInvoicesChart   ← credit_card_invoices  (barras empilhadas por cartão)
+   └─ ExpenseWeekdayChart       ← expense_weekday_distribution  (barras, eixo em %)
 ```
 
 - Acesso: menu **Mais** (não vira nova aba — a tab bar já tem 5 itens + FAB).
 - Período: 1º de janeiro → fim do mês selecionado (via `MonthSelector` + contexto `useMonth`).
 - Cache: React Query (`staleTime` 5 min, `gc` 10 min); chave inclui `from`/`to`.
-- Estados: skeletons no loading; empty-state por componente; despesa usa valor absoluto
-  para altura da barra.
-- Gráficos: svg + d3-scale (já no projeto, sem nova dependência).
+- Estados: skeletons no loading; empty-state por componente.
+- Gráficos: svg + d3-scale (sem dependência nova).
+- **Eixo Y:** todo gráfico de barras em dinheiro (`IncomeExpenseBarChart`,
+  `BudgetVsActualChart`, `CreditCardInvoicesChart`) desenha eixo vertical com ticks
+  rotulados em **R$**, formatados pelo locale do usuário (§ Decisões, #9).
+  `ExpenseWeekdayChart` é o único com eixo em **%**.
 
-### Web (esqueleto — a detalhar na SPEC@web)
+### Web (não implementado)
 
-```
-Página Análises (rota a definir)
-   └─ useDashboardSummary(from, to)          (hooks/use-dashboard.ts, SWR)
-        └─ fetchDashboardSummary             (lib/api/dashboard.ts → fetcher)
-             └─ GET /v2/dashboard/summary
-   ├─ FinancialKpiCards
-   ├─ IncomeExpenseBarChart
-   └─ BudgetVsActualChart
-```
-
-- Acesso: item de primeiro nível na sidebar (`components/dashboard/dashboard-sidebar.tsx`)
-  — web não tem a restrição de espaço do mobile (tab bar + FAB), então não precisa ficar
-  atrás de um menu "Mais" equivalente.
-- Cache: SWR (padrão do repo, `lib/api/cache-keys.ts`), seguindo o mesmo padrão dos
-  outros domínios (`movements.ts`, `wallets.ts`...).
-- Gráficos: `recharts` (já é dependência do projeto); sem nova lib.
-- Esta seção é um esqueleto de design, não um contrato fechado: nome de rota, label do
-  item de menu e componentes finais ficam para a SPEC@web.
+Quando for construído, consome o mesmo contrato: item de primeiro nível na sidebar
+(`components/dashboard/dashboard-sidebar.tsx`), SWR (`lib/api/cache-keys.ts`) e `recharts`
+(já é dependência do repo). Precisa de `SPEC-002@web` antes de implementar.
 
 ## Decisões de design
 
 | # | Decisão | Por quê |
 |---|---|---|
-| 1 | Endpoint agregador no backend | Menos payload e zero lógica de agregação duplicada nos clientes (mobile e web) |
+| 1 | Endpoint agregador no backend | Menos payload e zero lógica de agregação duplicada nos clientes |
 | 2 | Realizado = `Movement`s pagos | Consistência com a semântica de "realizado" do `Balance` |
 | 3 | Mobile acessa via menu **Mais** | Tab bar já tem 5 itens + FAB |
-| 4 | Web ganha item de sidebar de primeiro nível | Sem a restrição de espaço do mobile |
+| 4 | Web ganharia item de sidebar de primeiro nível | Sem a restrição de espaço do mobile |
 | 5 | Realizado do orçamento filtrado ao mês de `to` | Período é multi-mês (≠ `Balance`); evita somar o período inteiro |
-| 6 | Cada cliente usa sua própria lib de gráfico já existente (mobile: svg+d3-scale; web: recharts) | Reaproveita o que já está instalado em cada repo; o contrato é o mesmo, a renderização não precisa ser |
+| 6 | Cada cliente usa sua lib de gráfico já existente (mobile: svg+d3-scale; web: recharts) | O contrato é o mesmo; a renderização não precisa ser |
+| 7 | Distribuição por dia da semana conta **todas** as despesas do período (pagas **e** pendentes), excluindo `internal_transfer` | Mede **comportamento de compra**, não caixa realizado. Compra no cartão fica `is_paid: false` até a `Invoice` ser paga — filtrar por pago apagaria justamente as compras de cartão e distorceria o gráfico. `InternalTransfer` é movimento entre `Wallet`s do próprio usuário, não compra (ver GLO) |
+| 8 | `Invoice` entra no mês do seu `due_date` | É a convenção que a api já usa (`InvoiceRepository.FindByMonth` filtra por `due_date`); "fatura de agosto" = a que vence em agosto |
+| 9 | Eixo Y rotulado em R$ nos gráficos de dinheiro | Sem escala, a barra só dá ordem relativa; o usuário pediu leitura de valor absoluto direto do gráfico |
+| 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
 
 ## Decisões relacionadas
 
-Nenhum `ADR`/`PDR` aplicável ainda — não há mudança de topologia (nenhum
-serviço/integração novo) nem decisão de produto formal envolvida.
+Nenhum `ADR`/`PDR` aplicável — não há mudança de topologia (nenhum serviço/integração novo)
+nem decisão de produto formal registrada.
 
 ## Fora de escopo / questões em aberto
 
-- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar (`domain → usecase
-      → infra/api → bootstrap` da feature `dashboard`).
-- [ ] **SPEC@mobile** — formalizar o desenho já detalhado aqui (telas, hooks, componentes).
-- [ ] **SPEC@web** — o esqueleto acima ainda não tem rota, label de menu nem componentes
-      detalhados; é o próximo passo antes de implementar no web.
+- [ ] **SPEC-002@web + implementação web** — o web segue sem nenhuma parte desta feature.
 - [ ] **Top categorias no tempo, fixo×variável, projeção de fluxo de caixa** — extensões
       futuras do mesmo endpoint/contrato, fora do MVP.
+- [ ] **`GetExpenseMovements` inclui `internal_transfer`** — o helper de domínio da api filtra
+      só por `amount < 0`, então transferências internas entram em `monthly_series` e nos KPIs,
+      contrariando o GLO. A distribuição por dia da semana já as exclui (#7); alinhar o resto
+      é uma correção à parte, fora deste AYD.
