@@ -30,7 +30,8 @@ agregador no backend:
 
 1. **Renda vs Despesa** — série mensal (barras pareadas) ao longo do período.
 2. **Orçado vs Realizado** — comparativo do mês selecionado (reusa `Estimate`).
-3. **Faturas de cartão** — total de `Invoice` por mês, empilhado por `CreditCard`.
+3. **Cartões de crédito** — total de `Invoice` por mês, empilhado por `CreditCard`, na cor
+   de cada cartão.
 4. **Despesas por dia da semana** — distribuição percentual da **quantidade** de `Movement`s
    de despesa por dia da semana (ex.: "46% das compras acontecem na sexta").
 5. **KPIs** — receita e despesa totais do período.
@@ -74,8 +75,8 @@ Response (`200`):
   },
   "credit_card_invoices": {
     "cards": [
-      { "credit_card_id": "0f1c…", "name": "Nubank" },
-      { "credit_card_id": "7ab2…", "name": "Itaú" }
+      { "credit_card_id": "0f1c…", "name": "Nubank", "color": "#820ad1" },
+      { "credit_card_id": "7ab2…", "name": "Itaú",   "color": "" }
     ],
     "series": [
       {
@@ -101,7 +102,7 @@ Semântica:
 |---|---|
 | `monthly_series[]` | 1 entrada por mês do span (meses sem `Movement` vêm zerados → eixo contínuo). `income`/`expense` = soma de pagos; `net = income + expense` |
 | `current_month.budget` | mês de `to`. `budgeted` vem do `Estimate`; `realized` = pagos do mês (reusa lógica teto/piso do `Balance`) |
-| `credit_card_invoices.cards[]` | Todo `CreditCard` com pelo menos uma `Invoice` no período. Ordenado por `name`; é a legenda/ordem de empilhamento canônica |
+| `credit_card_invoices.cards[]` | Todo `CreditCard` com pelo menos uma `Invoice` no período. Ordenado por `name`; é a legenda/ordem de empilhamento canônica. `color` é a cor do próprio `CreditCard` (`#RRGGBB`) e vem **vazia** quando o usuário não escolheu nenhuma — o cliente aplica o fallback (§ Decisões, #11) |
 | `credit_card_invoices.series[]` | 1 entrada por mês do span (mesmo eixo de `monthly_series`, meses sem fatura zerados). Uma `Invoice` cai no mês do seu **`due_date`** (§ Decisões, #8). `by_card[]` traz **todos** os cartões de `cards[]`, com `0` onde não houve fatura, para o empilhamento não “pular” cor. `total` = soma de `by_card[].amount` |
 | `expense_weekday_distribution[]` | Sempre **7 entradas**, `weekday` 0=domingo … 6=sábado (mesma numeração de `time.Weekday`). `count` = quantidade de `Movement`s de despesa; `percentage` = `count / total de despesas do período` (fração 0–1, **0** quando não há despesa) |
 | `kpis` | Só `total_income` e `total_expense` do período |
@@ -146,7 +147,7 @@ AnalyticsScreen
    ├─ FinancialKpiCards         ← kpis (receita total, despesa total)
    ├─ IncomeExpenseBarChart     ← monthly_series
    ├─ BudgetVsActualChart       ← current_month.budget
-   ├─ CreditCardInvoicesChart   ← credit_card_invoices  (barras empilhadas por cartão)
+   ├─ CreditCardInvoicesChart   ← credit_card_invoices  (empilhado, na cor de cada cartão)
    └─ ExpenseWeekdayChart       ← expense_weekday_distribution  (barras, eixo em %)
 ```
 
@@ -180,6 +181,7 @@ Quando for construído, consome o mesmo contrato: item de primeiro nível na sid
 | 8 | `Invoice` entra no mês do seu `due_date` | É a convenção que a api já usa (`InvoiceRepository.FindByMonth` filtra por `due_date`); "fatura de agosto" = a que vence em agosto |
 | 9 | Eixo Y rotulado em R$ nos gráficos de dinheiro | Sem escala, a barra só dá ordem relativa; o usuário pediu leitura de valor absoluto direto do gráfico |
 | 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
+| 11 | A cor do cartão viaja no contrato (`cards[].color`), e não é buscada à parte pelo cliente | O gráfico fica com a cor que o usuário já reconhece do cartão. Custa zero: o repositório de `Invoice` já faz `Preload("CreditCard")`. A alternativa — o cliente buscar os cartões num segundo request e cruzar por id — traria duas fontes para o mesmo dado, um round-trip extra e o risco de não achar cartão excluído no meio do período. **A api não inventa cor:** se não houver, manda vazio, e o fallback (paleta do app) é decisão de apresentação de cada cliente |
 
 ## Decisões relacionadas
 
