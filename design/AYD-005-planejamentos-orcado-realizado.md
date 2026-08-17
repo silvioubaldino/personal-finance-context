@@ -221,10 +221,10 @@ compartilhar:
 |---|---|---|
 | `Movement` normal do período | sim | — |
 | `Movement` pendente (`is_paid = false`) | sim, em `realized` (fora de `realized_paid`) | A tela agrega compromissos do mês, não só o que já saiu da conta — decisão 1 |
-| Compra no `CreditCard` | sim, via itens da `Invoice` | É despesa da categoria da compra, no mês da compra |
+| Compra no `CreditCard` | sim, via itens da `Invoice` | É despesa da categoria da compra, no mês da compra. Entra também em `realized_paid`: o item nasce `is_paid = true` — o que fica pendente é a `Invoice`, não a compra |
 | `internal_transfer` (as duas pernas) | **não** | `GLO`: `InternalTransfer` não entra no resultado de entradas/saídas do período |
 | `invoice_payment` | **não** | As compras já entram itemizadas; contar a fatura duplica o valor |
-| `invoice_remainder` | sim, via itens da `Invoice` | Comporta-se como `credit_card`: conta no mês da `Invoice` que o recebe — decisão 2 |
+| `invoice_remainder` | sim, via itens da `Invoice` | Comporta-se como `credit_card`: conta no mês da `Invoice` que o recebe — decisão 2. Nasce `is_paid = false`, então entra em `realized` e fica fora de `realized_paid` |
 | `Movement` recorrente projetado | sim | Já vem de `GET /v2/movements/`; é compromisso do mês |
 
 Erros: `month` fora de 1–12 ou `year` não inteiro → `400` (`WrapInvalidInput`); falha de
