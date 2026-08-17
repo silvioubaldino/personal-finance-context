@@ -42,9 +42,10 @@ owner: Silvio Ubaldino
 ## Diagrama de relações
 ```
 PROD-001
-   ├─ REQ-001 ─ AYD-001 (exemplo) ─┬─ SPEC-001@api ─ PLAN-001@api
-   │                               ├─ SPEC-001@web ─ PLAN-001@web
-   │                               └─ SPEC-001@mobile ─ PLAN-001@mobile
+   ├─ REQ-001 ─ AYD-001 (exemplo) ─┬─ SPEC-001@api
+   │                               ├─ SPEC-001@web
+   │                               └─ SPEC-001@mobile
+   │                                 (1 SPEC por repo = spec + plano no mesmo doc)
    │          ├ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
    │          ├ AYD-003 (análises financeiras, real) ─┬─ SPEC-002@api
    │          │                                       └─ SPEC-002@mobile   (web: sem SPEC)

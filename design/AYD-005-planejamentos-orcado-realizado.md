@@ -2,7 +2,7 @@
 id: AYD-005
 type: design
 title: Planejamentos — orçado × realizado (agregação no servidor)
-status: draft
+status: review
 created: 2026-08-17
 updated: 2026-08-17
 owner: Silvio Ubaldino
@@ -21,12 +21,16 @@ superseded_by: null
 > diferentes no web e no mobile**. A análise leu o código das três branches de trabalho e
 > confirmou a causa — a regra de cálculo está reimplementada em quatro lugares
 > independentes, que discordam em cinco pontos. Este documento fixa o recorte canônico e o
-> contrato; não descreve implementação (isso é SPEC/PLAN por repo).
+> contrato; não descreve implementação (isso é a `SPEC` de cada repo).
 
-> **Nota de status:** `draft`. Três decisões de produto estão marcadas como
-> **pendentes de review** na seção homônima — a recomendação de cada uma já está escrita e é
-> o que o contrato abaixo assume. Confirmadas ou corrigidas, o doc vai a `review` e as SPECs
-> podem começar.
+> **Nota de status:** `review`. As três decisões de produto que bloqueavam este AYD foram
+> resolvidas pelo owner em 17/ago/2026 — ver "Decisões resolvidas"; o contrato abaixo já
+> reflete o resultado, com uma correção de fórmula do `result` que a resolução da decisão 1
+> tornou visível. As SPECs podem começar.
+
+> **Formato das entregas:** cada repo entrega **um doc só** — a `SPEC`, com o plano de
+> implementação embutido. O `PLAN` separado foi retirado do framework na mesma revisão
+> (`conventions.md` §1 e §6) e este AYD já executa assim.
 
 ## Objetivo
 
@@ -60,9 +64,9 @@ componente os chama). Cada front reimplementou a agregação com um recorte pró
 | **Onde a regra mora** | Na **api**, num único usecase. Web e mobile não recalculam nada — recebem números prontos. |
 | **Forma da entrega** | Endpoint **aditivo** `GET /v2/estimate/summary`; os endpoints atuais continuam de pé até os dois fronts migrarem. Nada quebra no dia do deploy. |
 | **O que a api devolve** | **Números**, nunca string formatada, cor, label traduzido ou valor absoluto. Formatação, i18n e cor continuam sendo responsabilidade de cada front. |
-| **Recorte de "realizado"** | Fora: `internal_transfer` (o `GLO` já diz que não entra no resultado do período) e `invoice_payment` (as compras já vêm itemizadas — contá-lo duplica o cartão). Dentro: compras no cartão, via itens da `Invoice`. |
-| **Pendente conta?** | O payload devolve **`realized`** (todos) e **`realized_paid`** (só `is_paid`). Planejamentos usa `realized`; AYD-003 usa `realized_paid`. Ver "Decisões pendentes de review". |
-| **Sinal do `result`** | Uma convenção só, para os dois fronts: **positivo = sobrou**. Elimina a inversão de sinal entre web e mobile. |
+| **Recorte de "realizado"** | Fora: `internal_transfer` (o `GLO` já diz que não entra no resultado do período) e `invoice_payment` (as compras já vêm itemizadas — contá-lo duplica o cartão). Dentro: compras no cartão e `invoice_remainder`, via itens da `Invoice`. |
+| **Pendente conta?** | **Sim.** Planejamentos é agregador de tudo que foi lançado, pago ou não: `result`, `consolidated` e `period_balance` derivam de **`realized`** (inclui `is_paid = false`). O payload também devolve `realized_paid`, informativo aqui e consumido por AYD-003. |
+| **Sinal do `result`** | Uma convenção só, para os dois fronts: **positivo = sobrou**, e com despesa negativa isso é `realized − budgeted` para receita e despesa igualmente. Elimina a inversão de sinal entre web e mobile. |
 | **Receita × despesa** | Classificado pela flag `is_income` da `Category`, **nunca pelo sinal do valor** — um estorno em categoria de despesa reduz a despesa, não vira receita. |
 | **Período** | `month`/`year` inteiros; o servidor resolve as datas. Nenhum front monta janela de data. |
 
@@ -110,6 +114,13 @@ cartão `−400`; pagamento da fatura `−400`; transferência interna de `1.000
 
 Nenhum dos três está correto. O realizado de Alimentação — a linha que o usuário olha — dá
 `−1.300` nos fronts e `−600` na api.
+
+Sob o contrato desta feature o mesmo cenário dá **receita 5.000, despesa −1.300, saldo
+3.700** — e é esse trio que vira o *golden file* da Fase 2. Note que o saldo coincide com o
+do web **por acidente**: as duas pernas da transferência interna se anulam na soma
+(`+1.000` e `−1.000`), então o erro do web não aparece no total, só nos cards (despesa
+`−2.300` em vez de `−1.300`) e nas duas linhas fantasma. Parte de por que a divergência
+sobreviveu tanto tempo é isso — o número mais visível da tela era o único que fechava.
 
 Duas causas específicas merecem nome:
 
@@ -189,15 +200,15 @@ Semântica:
 
 | Campo | Regra |
 |---|---|
-| `realized` | Soma dos `Movement`s do período que passam pelo **recorte canônico** (abaixo). Despesa negativa. |
-| `realized_paid` | O mesmo recorte, restrito a `is_paid = true`. Mesma semântica de "realizado" que AYD-003 usa. |
+| `realized` | Soma dos `Movement`s do período que passam pelo **recorte canônico** (abaixo), **pagos e pendentes**. Despesa negativa. É o campo que alimenta `result`, `consolidated` e `period_balance`. |
+| `realized_paid` | O mesmo recorte, restrito a `is_paid = true`. **Informativo nesta tela** — nenhum agregado deriva dele aqui; é o "realizado" que AYD-003 consome em Análises. |
 | `budgeted` | Valor do `Estimate` do mês. `0` quando a linha não é planejada. |
-| `result` | **Positivo sempre significa "sobrou".** Despesa: `budgeted − realized`. Receita: `realized − budgeted`. O front colore pelo sinal, sem conhecer o tipo da linha. |
+| `result` | `realized − budgeted`, **igual para receita e despesa** — como a despesa é negativa, a mesma conta serve para as duas e **positivo sempre significa "sobrou"** (despesa: gastou menos que o teto; receita: entrou mais que o piso). O front colore pelo sinal, sem conhecer o tipo da linha. |
 | `progress` | `abs(realized) / abs(budgeted)`; **`null`** quando `budgeted = 0` (evita divisão por zero e o "100%" arbitrário que os fronts inventam hoje). |
-| `consolidated` | Teto/piso — `min` para despesa, `max` para receita, por categoria. É o número dos cards de resumo, e é a regra que o `swagger.yaml` já documenta em `/v2/balance/estimate/period`. |
+| `consolidated` | Teto/piso entre `budgeted` e `realized` — `min` para despesa, `max` para receita, por categoria. É o número dos cards de resumo, e é a regra que o `swagger.yaml` já documenta em `/v2/balance/estimate/period`. |
 | `is_income` | Vem da flag da `Category`, **nunca do sinal do valor**. |
 | `is_planned` | `false` para linha virtual (tem `Movement`, não tem `Estimate`); nesse caso `estimate_id` / `sub_estimate_id` vêm `null`. |
-| `period_balance` | `totals.income.consolidated + totals.expense.consolidated`. |
+| `period_balance` | `totals.income.consolidated + totals.expense.consolidated` — os dois consolidados, portanto também derivado de `realized`. |
 | sinais | Despesa **sempre negativa** em todo o payload, igual ao que AYD-003 já fixou. Valor absoluto é escolha de exibição de cada front. |
 | ordenação | Receita antes de despesa; planejado antes de não planejado; alfabética por nome dentro de cada bloco. Os fronts **não** reordenam. |
 | aninhamento | Duas camadas apenas (`categories[].subcategories[]`); subcategoria não aninha mais. |
@@ -208,10 +219,11 @@ compartilhar:
 | Situação | Entra? | Por quê |
 |---|---|---|
 | `Movement` normal do período | sim | — |
+| `Movement` pendente (`is_paid = false`) | sim, em `realized` (fora de `realized_paid`) | A tela agrega compromissos do mês, não só o que já saiu da conta — decisão 1 |
 | Compra no `CreditCard` | sim, via itens da `Invoice` | É despesa da categoria da compra, no mês da compra |
 | `internal_transfer` (as duas pernas) | **não** | `GLO`: `InternalTransfer` não entra no resultado de entradas/saídas do período |
 | `invoice_payment` | **não** | As compras já entram itemizadas; contar a fatura duplica o valor |
-| `invoice_remainder` | **não** (ver pendência 2) | Hoje já fica fora; conta no mês da fatura que o recebe |
+| `invoice_remainder` | sim, via itens da `Invoice` | Comporta-se como `credit_card`: conta no mês da `Invoice` que o recebe — decisão 2 |
 | `Movement` recorrente projetado | sim | Já vem de `GET /v2/movements/`; é compromisso do mês |
 
 Erros: `month` fora de 1–12 ou `year` não inteiro → `400` (`WrapInvalidInput`); falha de
@@ -278,8 +290,8 @@ EstimateContent
 Remove: `use-estimate-with-movements.ts`, `lib/utils/estimate-calculations.ts`,
 `lib/utils/sum-movements-by-category.ts` e `lib/utils/group-movements-by-category.ts` (este
 último já é código morto — nenhum import). Mantém a query de `Movement`s (já global via
-`MovementProvider`) apenas para o modal de detalhes. Migra também o CRUD de `/estimate`
-legacy para `/v2/estimate/*` — em PR separado (ver pendência 3).
+`MovementProvider`) apenas para o modal de detalhes. O CRUD segue em `/estimate` legacy nesta
+fase; a migração para `/v2/estimate/*` é trabalho posterior (decisão 3).
 
 ### Mobile
 
@@ -299,53 +311,84 @@ apenas para o `CategoryDetailsModal`, que precisa da lista e não do agregado.
 
 | Fase | Repo | Entrega |
 |---|---|---|
-| 1 | context | Este AYD em `review` → `approved`, com as três pendências resolvidas |
-| 2 | api | SPEC + PLAN; usecase de summary; **correção de `GetSumByCategory` / `GetEstimateByCategory`**; normalização de sinal na escrita; swagger; endpoints antigos intactos |
-| 3 | web · mobile (paralelo) | Uma SPEC por repo; consumir o summary; apagar a agregação local |
+| 1 | context | Este AYD em `review` (feito) → `approved`; as três decisões estão resolvidas |
+| 2 | api | `SPEC-NNN@api` (com o plano embutido); usecase de summary; **correção de `GetSumByCategory` / `GetEstimateByCategory`**; normalização de sinal na escrita; swagger; endpoints antigos intactos |
+| 3 | web · mobile (paralelo) | Uma `SPEC` por repo; consumir o summary; apagar a agregação local |
+| 3.5 | web | Migrar o CRUD de `Estimate` para `/v2/estimate/*` (decisão 3) — pré-requisito da Fase 4 |
 | 4 | api | Aposentar `/estimate`, `/sub-estimate`, `/balance/estimate/period`, `internal/domain/estimate/*`, `internal/domain/balance/*` e `/v2/balance/estimate/period` + os dois `useEstimateBalance` órfãos |
 
-A Fase 3 só começa depois da 2; a Fase 4 só depois de web e mobile em produção.
+A Fase 3 só começa depois da 2; a Fase 4 só depois de web e mobile em produção **e** da
+Fase 3.5 (enquanto o web escrever no legacy, o legacy não sai).
 
 **Cobertura obrigatória (Fase 2):** um caso table-driven **por regra** da tabela de
 semântica, mais um *golden file* com o cenário de "Impacto medido" acima. O que permitiu esta
 divergência não foi descuido — foi não existir um lugar onde as implementações se
 comparassem. As SPECs de web e mobile batem nos mesmos números desse golden file.
 
-## Decisões pendentes de review
+## Decisões resolvidas (review de 17/ago/2026)
 
-As três não são inferíveis do código, porque o código discorda de si mesmo. A recomendação
-de cada uma é o que o contrato acima já assume.
+As três não eram inferíveis do código, porque o código discorda de si mesmo. Resolvidas pelo
+owner nesta revisão; o contrato acima já reflete o resultado.
 
-### 1. `Movement` pendente conta no realizado?
+### 1. `Movement` pendente conta no realizado? — **sim, em `realized`**
 
 **Tensão:** AYD-003 escreveu que "realizado = `Movement`s **pagos**, mesma semântica do
 `Balance`". Os dois fronts hoje contam tudo. Seguir AYD-003 ao pé da letra em Planejamentos
-**muda o número de todo usuário** no dia do release.
+mudaria o número de todo usuário no dia do release.
 
-**Recomendação:** devolver os dois campos e distinguir por tela — Planejamentos usa
-`realized` (compromissos do mês, mantém o comportamento atual), Análises usa
-`realized_paid` (o que de fato aconteceu). São perguntas diferentes: planejar é sobre o mês
-inteiro, analisar é sobre o passado. Registrada aqui para não parecer contradição com
-AYD-003.
+**Decisão:** Planejamentos é um **agregador de tudo que foi lançado no app** — `Movement` ou
+`Estimate`, pago ou pendente. Portanto:
 
-### 2. `invoice_remainder` entra no realizado?
+- `realized` inclui `is_paid = false`; `realized_paid` é o mesmo recorte restrito a pagos.
+- **`result`, `consolidated` e `period_balance` derivam de `realized`**, nunca de
+  `realized_paid`. O campo pago existe no payload como informação e para AYD-003.
+- `period_balance` sai dos **dois `consolidated`** (receita + despesa), e não de uma soma
+  paralela de movimentações — um número só, coerente com os dois cards que o usuário vê.
 
-**Tensão:** hoje está fora do `FindByPeriod` da api e invisível para os fronts. Mas
-conceitualmente é despesa real, empurrada para a fatura seguinte.
+Isso **não contradiz** AYD-003: são perguntas diferentes sobre os mesmos dados — planejar
+olha o mês inteiro, analisar olha o que aconteceu. É por isso que os dois campos convivem no
+mesmo payload, em vez de cada feature recortar por conta própria.
 
-**Recomendação:** manter fora do mês em que foi gerado e contar no mês da `Invoice` que o
-recebe — que é o comportamento atual de fato. Confirmar explicitamente para virar regra e
-não permanecer acidente de implementação.
+**Consequência de projeto:** manter o `is_paid` fora do recorte preserva o comportamento
+numérico atual dos fronts nesse eixo. O que muda para o usuário vem do recorte de
+`type_payment` (transferência interna no web, fatura no mobile), não do pendente.
 
-### 3. O web migra o CRUD junto com a leitura?
+### 2. `invoice_remainder` entra no realizado? — **sim, igual a `credit_card`**
+
+**Tensão:** hoje está fora do `FindByPeriod` da api e invisível para os fronts. Mas é despesa
+real, empurrada para a fatura seguinte.
+
+**Decisão:** o `invoice_remainder` nasce do pagamento **parcial** de uma `Invoice` — o resto
+vira um `Movement` dentro da `Invoice` seguinte, com `is_paid: false`
+(`buildRemainderMovement`, `internal/usecase/invoice_usecase.go:433`@api). Comporta-se como
+`credit_card`, e é assim que deve ser tratado em cada contexto:
+
+| Contexto | Comportamento |
+|---|---|
+| `GET /v2/movements/` (`FindByPeriod`) | **fora** — correto como está hoje; não é movimentação avulsa do mês |
+| `invoices[].movements` | **dentro** — aparece na fatura que o recebe, como qualquer item de cartão |
+| `GET /v2/estimate/summary` (`realized`) | **dentro**, no mês da `Invoice` que o recebe — mesmo caminho do `credit_card`, já que `invoice_payment` fica fora |
+
+**Consequência aceita:** o remainder carrega `Category`/`Subcategory` **fixas** de cartão
+(`d47cc960…` / `3ef4b1a5…`, `invoice_usecase.go:434-435`@api), então aparece em Planejamentos
+como uma linha própria — normalmente **não planejada** — e o valor não pago de um mês
+reaparece no mês seguinte sob ela. É coerente com a decisão 1 (a tela agrega compromissos, e
+o remainder é compromisso do mês seguinte), mas fica registrado como escolha deliberada: se
+um dia o número incomodar, a saída é um `PDR` mudando esta linha, não um recorte novo dentro
+de cada front.
+
+### 3. O web migra o CRUD junto com a leitura? — **não, depois**
 
 **Tensão:** o web ainda usa `/estimate` legacy para ler **e** escrever. O legacy tem contrato
 levemente diferente (`estimates_sub_categories` sempre presente vs. `omitempty` no v2; não
 devolve `user_id`) e desreferencia ponteiro sem checar nil
 (`internal/domain/estimate/service/estimate_category.go:50`@api, corrigido no v2).
 
-**Recomendação:** não. Leitura primeiro (só o summary), CRUD num PR seguinte. Dois PRs
-pequenos em vez de um grande; o legacy só sai quando os dois terminarem.
+**Decisão:** a Fase 3 no web entrega **só a leitura** (consumir o summary). O CRUD continua em
+`/estimate` legacy por enquanto; a migração para `/v2/estimate/*` é um trabalho posterior e
+**pré-requisito da Fase 4**. Até lá, as duas diferenças acima seguem de pé — o que também
+significa que o legacy não pode ser aposentado antes dessa migração, mesmo com os dois fronts
+já lendo o summary.
 
 ## Riscos
 
@@ -370,9 +413,11 @@ pequenos em vez de um grande; o legacy só sai quando os dois terminarem.
 
 ## Fora de escopo / questões em aberto
 
-- [ ] **Decisões 1, 2 e 3** acima — bloqueiam a SPEC@api.
-- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar a Fase 2.
+- [x] **Decisões 1, 2 e 3** — resolvidas em 17/ago/2026 (ver seção acima).
+- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar a Fase 2 (doc único:
+      spec + plano).
 - [ ] **SPEC@web / SPEC@mobile** — Fase 3, em paralelo, depois do endpoint no ar.
+- [ ] **CRUD de `Estimate` no web para v2** — Fase 3.5, PR próprio; libera a Fase 4.
 - [ ] **Movimentações por categoria** — o modal de detalhes continua filtrando a lista no
       cliente. Se o payload de `GET /v2/movements/` incomodar, avaliar depois um
       `GET /v2/estimate/summary/{category_id}/movements`. Não bloqueia nada.

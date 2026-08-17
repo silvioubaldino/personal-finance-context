@@ -3,7 +3,7 @@ id: META-conventions
 type: meta
 title: Convenções da documentação
 status: approved
-updated: 2026-06-25
+updated: 2026-08-17
 ---
 
 # Convenções da documentação
@@ -25,18 +25,22 @@ ID = `PREFIXO-NNN`, estável (nunca muda, mesmo se o arquivo for renomeado/movid
 | PDR  | Product Decision Record | contexto: `product_decisions/` | compartilhado |
 | ADR  | Architecture Decision Record | contexto: `architecture_decisions/` | compartilhado, cross-repo |
 | ARCH | Visão de arquitetura (C4 vivo: contexto + containers) | contexto: `architecture.md` | compartilhado, cross-repo |
-| SPEC | Especificação (parte de um repo) | serviço: `docs/specs/` | local |
-| PLAN | Plano de implementação | serviço: `docs/plans/` | local |
+| SPEC | Especificação **+ plano de implementação** (parte de um repo) | serviço: `docs/specs/` | local |
 | TDR  | Technical Decision Record | serviço: `docs/technical_decisions/` | local |
 | CONV | Convenção de engenharia (teste, estilo, git…) | serviço: `docs/conventions/` | local |
 | GLO  | Glossário (linguagem ubíqua) | contexto: `_meta/glossary.md` | compartilhado |
+
+> **`PLAN` foi retirado (ago/2026).** O plano de implementação virou **seção da `SPEC`**:
+> um doc por repo por feature em vez de dois, para o mesmo trabalho. O prefixo `PLAN` fica
+> **aposentado** e não se reutiliza; nenhum `PLAN` havia sido escrito, então não há migração —
+> só os templates saíram de `docs/plans/` para dentro do template de `SPEC`.
 
 ## 2. Frontmatter padrão (obrigatório em todo doc)
 
 ```yaml
 ---
 id: AYD-007
-type: design             # product|requirements|design|roadmap|pdr|adr|spec|plan|tdr
+type: design             # product|requirements|design|roadmap|pdr|adr|spec|tdr
 title: Upload de mídia
 status: draft            # draft | review | approved | superseded | deprecated
 created: 2025-01-01
@@ -66,6 +70,9 @@ IDs são **globais no produto**. Para apontar um doc de outro repo, use `ID@repo
 - Refinamento declarado nos dois lados: `children` no pai, `parents` no filho.
 - Toda `SPEC` tem ao menos um `AYD` em `parents` (ex.: `[AYD-007@context]`).
 - **1 AYD → N SPECs**, uma por repo afetado. O AYD é a fonte dos contratos.
+- A `SPEC` é o **doc único do repo**: o *o quê* (objetivo, critérios de aceite em Gherkin,
+  contratos consumidos/expostos) **e** o *como* (abordagem, passos, arquivos afetados, testes,
+  checklist). Seu `children` fica vazio, salvo se outra `SPEC` a refinar.
 - **Contrato só muda no AYD/ADR (no repo de contexto).** Serviços implementam, não redefinem.
 - Termos de domínio vivem só no `GLO`; os outros docs apenas referenciam.
 
@@ -75,8 +82,7 @@ IDs são **globais no produto**. Para apontar um doc de outro repo, use `ID@repo
 |------|---------------|-----------|
 | PROD / REQ / AYD / ROAD / ARCH | **Vivo** | Edita in-place, atualiza `updated`. |
 | PDR / ADR / TDR | **Append-only** | Nunca reescreve. Decisão nova substitui a antiga via `superseded_by`. |
-| SPEC | **Congela ao aprovar** | Mutável em draft/review; vira contrato quando `approved`. |
-| PLAN | **Efêmero** | Documento de trabalho; após executado, é histórico. |
+| SPEC | **Congela ao aprovar** (só a parte "o quê") | Mutável em draft/review. Em `approved`, objetivo/critérios/contratos viram contrato; a **seção de plano** segue sendo marcada conforme a execução anda — marcar checklist não muda o `status`. |
 | GLO | Vivo | Edita in-place. |
 
 Auditoria dos docs vivos mora no **git + changelog**.

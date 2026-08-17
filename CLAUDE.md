@@ -19,7 +19,9 @@ which mirror it under `docs/shared/`.
 - **ARCH** (`architecture.md`) — living high-level architecture (C4 context + container) with provider names; updated whenever a service/integration is added or removed
 
 ## What does NOT live here
-Each service's specs, plans, local technical decisions (TDR), code conventions, and changelog.
+Each service's specs (one SPEC per repo per feature, with its implementation plan as a
+section — there is no separate PLAN doc), local technical decisions (TDR), code conventions,
+and changelog.
 
 ## Core rule (cross-repo)
 **Contracts only change here** (in the AYD/ADR). Services implement; they do not redefine.
