@@ -8,7 +8,7 @@ updated: 2026-08-17
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
-children: []
+children: [SPEC-002@api, SPEC-003@web, SPEC-004@mobile, SPEC-005@web, SPEC-006@api]
 related: [AYD-003, GLO]
 tags: [estimate, planning, balance, consistency]
 superseded_by: null
@@ -26,7 +26,8 @@ superseded_by: null
 > **Nota de status:** `review`. As três decisões de produto que bloqueavam este AYD foram
 > resolvidas pelo owner em 17/ago/2026 — ver "Decisões resolvidas"; o contrato abaixo já
 > reflete o resultado, com uma correção de fórmula do `result` que a resolução da decisão 1
-> tornou visível. As SPECs podem começar.
+> tornou visível. As cinco `SPEC`s (uma por fase por repo) já estão escritas em `draft` — ver
+> `children` e a tabela de Fases.
 
 > **Formato das entregas:** cada repo entrega **um doc só** — a `SPEC`, com o plano de
 > implementação embutido. O `PLAN` separado foi retirado do framework na mesma revisão
@@ -49,13 +50,13 @@ componente os chama). Cada front reimplementou a agregação com um recorte pró
 
 | Repo | Papel nesta feature | Status do desenho | SPEC gerada |
 |------|---------------------|--------------------|-------------|
-| api | Passa a ser o dono do cálculo: novo `GET /v2/estimate/summary` que devolve linhas por `Category`/`Subcategory` e totais já agregados; corrige os bugs de soma listados em "Débito técnico bloqueante" | Detalhado — contrato fechado abaixo | nenhuma ainda |
-| web | Consome o contrato e **remove** a agregação local (`use-estimate-with-movements.ts`, `estimate-calculations.ts`, `sum-movements-by-category.ts`); migra também a leitura de `/estimate` legacy para v2 | Detalhado o suficiente para SPEC | nenhuma ainda |
-| mobile | Consome o **mesmo contrato** e remove os três `useMemo` de agregação do `PlanningScreen.tsx` | Detalhado o suficiente para SPEC | nenhuma ainda |
+| api | Passa a ser o dono do cálculo: novo `GET /v2/estimate/summary` que devolve linhas por `Category`/`Subcategory` e totais já agregados; corrige os bugs de soma listados em "Débito técnico bloqueante"; depois, aposenta o legacy | Detalhado — contrato fechado abaixo | `SPEC-002@api` (Fase 2) · `SPEC-006@api` (Fase 4) |
+| web | Consome o contrato e **remove** a agregação local (`use-estimate-with-movements.ts`, `estimate-calculations.ts`, `sum-movements-by-category.ts`); depois migra o CRUD de `/estimate` legacy para v2 | Detalhado o suficiente para SPEC | `SPEC-003@web` (Fase 3) · `SPEC-005@web` (Fase 3.5) |
+| mobile | Consome o **mesmo contrato** e remove os três `useMemo` de agregação do `PlanningScreen.tsx` | Detalhado o suficiente para SPEC | `SPEC-004@mobile` (Fase 3) |
 
-> `children` fica vazio: nenhuma `SPEC` foi escrita ainda. Este AYD fixa o contrato e o
-> recorte canônico; SPEC@api é o próximo passo, e SPEC@web / SPEC@mobile saem em paralelo
-> depois que o endpoint existir.
+> As cinco `SPEC`s existem em `draft` (escritas em 17/ago/2026, uma por fase por repo) e
+> constam em `children`. Este AYD segue sendo a única fonte do contrato: nenhuma delas
+> redefine campo ou semântica — quando uma precisa mudar o contrato, a mudança volta para cá.
 
 ## Sumário executivo (decisões-chave)
 
@@ -312,10 +313,10 @@ apenas para o `CategoryDetailsModal`, que precisa da lista e não do agregado.
 | Fase | Repo | Entrega |
 |---|---|---|
 | 1 | context | Este AYD em `review` (feito) → `approved`; as três decisões estão resolvidas |
-| 2 | api | `SPEC-NNN@api` (com o plano embutido); usecase de summary; **correção de `GetSumByCategory` / `GetEstimateByCategory`**; normalização de sinal na escrita; swagger; endpoints antigos intactos |
-| 3 | web · mobile (paralelo) | Uma `SPEC` por repo; consumir o summary; apagar a agregação local |
-| 3.5 | web | Migrar o CRUD de `Estimate` para `/v2/estimate/*` (decisão 3) — pré-requisito da Fase 4 |
-| 4 | api | Aposentar `/estimate`, `/sub-estimate`, `/balance/estimate/period`, `internal/domain/estimate/*`, `internal/domain/balance/*` e `/v2/balance/estimate/period` + os dois `useEstimateBalance` órfãos |
+| 2 | api | `SPEC-002@api` (com o plano embutido); usecase de summary; **correção de `GetSumByCategory` / `GetEstimateByCategory`**; normalização de sinal na escrita; swagger; endpoints antigos intactos |
+| 3 | web · mobile (paralelo) | `SPEC-003@web` e `SPEC-004@mobile`; consumir o summary; apagar a agregação local (inclui os dois `useEstimateBalance` órfãos) |
+| 3.5 | web | `SPEC-005@web` — migrar o CRUD de `Estimate` para `/v2/estimate/*` (decisão 3); pré-requisito da Fase 4 |
+| 4 | api | `SPEC-006@api` — aposentar `/estimate`, `/sub-estimate`, `/balance/estimate/period`, `internal/domain/estimate/*`, `internal/domain/balance/*` e `/v2/balance/estimate/period` |
 
 A Fase 3 só começa depois da 2; a Fase 4 só depois de web e mobile em produção **e** da
 Fase 3.5 (enquanto o web escrever no legacy, o legacy não sai).
@@ -414,10 +415,16 @@ já lendo o summary.
 ## Fora de escopo / questões em aberto
 
 - [x] **Decisões 1, 2 e 3** — resolvidas em 17/ago/2026 (ver seção acima).
-- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar a Fase 2 (doc único:
-      spec + plano).
-- [ ] **SPEC@web / SPEC@mobile** — Fase 3, em paralelo, depois do endpoint no ar.
-- [ ] **CRUD de `Estimate` no web para v2** — Fase 3.5, PR próprio; libera a Fase 4.
+- [x] **SPECs de todas as fases** — escritas em 17/ago/2026, em `draft`, uma por fase por repo
+      (`SPEC-002@api`, `SPEC-003@web`, `SPEC-004@mobile`, `SPEC-005@web`, `SPEC-006@api`), cada
+      uma com o plano de implementação embutido. Execução na ordem das fases.
+- [ ] **Limpeza da normalização de sinal nos fronts** — depois que `SPEC-002@api` normalizar o
+      sinal na escrita, o `normalizeEstimateAmount`@web sai junto com `SPEC-005@web`, mas o
+      ternário inline do `EstimateModal`@mobile fica sem SPEC (a `SPEC-004@mobile` é só
+      leitura). Item pequeno, sem contrato envolvido; pode ir num PR de limpeza.
+- [ ] **Onboarding do web no framework de docs** — o web recebeu `docs/specs/`, mas não tem
+      `docs/shared/` (sync do contexto), `docs/conventions/` nem `docs/technical_decisions/`
+      como api e mobile. Não bloqueia as SPECs; fica como dívida do framework.
 - [ ] **Movimentações por categoria** — o modal de detalhes continua filtrando a lista no
       cliente. Se o payload de `GET /v2/movements/` incomodar, avaliar depois um
       `GET /v2/estimate/summary/{category_id}/movements`. Não bloqueia nada.

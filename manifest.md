@@ -53,7 +53,11 @@ PROD-001
    │          └ AYD-005 (transferência interna, real, parcialmente implementada) ─ SPEC-003@mobile
    │          ├ AYD-003 (análises financeiras, real, em design) ─ (sem SPEC ainda)
    │          ├ AYD-004 (import de fatura de cartão, real, em design) ─ (sem SPEC ainda)
-   │          └ AYD-005 (planejamentos orçado×realizado, real, em design) ─ (sem SPEC ainda)
+   │          └ AYD-005 (planejamentos orçado×realizado, real, em review) ─┬─ SPEC-002@api    (fase 2)
+   │             │                                                        ├─ SPEC-003@web    (fase 3)
+   │             │                                                        ├─ SPEC-004@mobile (fase 3)
+   │             │                                                        ├─ SPEC-005@web    (fase 3.5)
+   │             │                                                        └─ SPEC-006@api    (fase 4)
    │             └ compartilha a definição de "realizado" com AYD-003
    └─ ROAD-001
 (PDR / ADR / ARCH / GLO referenciados transversalmente por todos)
