@@ -42,6 +42,11 @@ agregador no backend:
 deliberada na distribuição por dia da semana (§ Decisões, #7). Despesas mantêm sinal
 **negativo** em todo o fluxo, nos três repos.
 
+> **Ver AYD-005.** Ele detalha o *recorte* dessa mesma definição (quais `type_payment`
+> entram e saem) e expõe o campo `realized_paid`, que é exatamente o que
+> `current_month.budget.realized` precisa aqui. As duas features devem ler a mesma
+> implementação no servidor, não duas parecidas.
+
 ## Repos afetados e papéis
 
 | Repo | Papel nesta feature | Estado | SPEC |
