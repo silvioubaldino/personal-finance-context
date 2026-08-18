@@ -27,6 +27,8 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): added a Month option to the period scope toggle
+  (Month/Quarter/Year), still a client-side `from` choice with no contract change.
 - Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle — a
   client-side period choice reusing the existing endpoint, no new contract field.
 - Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown,
