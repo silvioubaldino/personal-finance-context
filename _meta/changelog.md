@@ -27,6 +27,8 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown,
+  sorted largest to smallest.
 - Updated AYD-003 (financial analytics): dropped the four period KPIs, added credit card
   invoice totals stacked by card (carrying each card's own colour) and an expense-count
   distribution by weekday, and required a labelled currency axis on the money bar charts;

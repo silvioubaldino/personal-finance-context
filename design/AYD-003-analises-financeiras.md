@@ -4,7 +4,7 @@ type: design
 title: Análises financeiras (visão ao longo do tempo)
 status: draft
 created: 2026-06-25
-updated: 2026-08-14
+updated: 2026-08-18
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -34,7 +34,9 @@ agregador no backend:
    de cada cartão.
 4. **Despesas por dia da semana** — distribuição percentual da **quantidade** de `Movement`s
    de despesa por dia da semana (ex.: "46% das compras acontecem na sexta").
-5. **KPIs** — receita e despesa totais do período.
+5. **Despesas por categoria** — total pago no período por `Category`, ordenado da maior para
+   a menor despesa.
+6. **KPIs** — receita e despesa totais do período.
 
 "Realizado" = `Movement`s **pagos** (mesma semântica do `Balance`), com uma exceção
 deliberada na distribuição por dia da semana (§ Decisões, #7). Despesas mantêm sinal
@@ -92,6 +94,10 @@ Response (`200`):
     { "weekday": 0, "count": 3,  "percentage": 0.06 },
     { "weekday": 5, "count": 23, "percentage": 0.46 }
   ],
+  "expense_by_category": [
+    { "category_id": "9c3a…", "name": "Alimentação", "color": "#f97316", "total": -8400 },
+    { "category_id": "1e7b…", "name": "Transporte",  "color": "",        "total": -4200 }
+  ],
   "kpis": { "total_income": 30000, "total_expense": -19200 }
 }
 ```
@@ -105,6 +111,7 @@ Semântica:
 | `credit_card_invoices.cards[]` | Todo `CreditCard` com pelo menos uma `Invoice` no período. Ordenado por `name`; é a legenda/ordem de empilhamento canônica. `color` é a cor do próprio `CreditCard` (`#RRGGBB`) e vem **vazia** quando o usuário não escolheu nenhuma — o cliente aplica o fallback (§ Decisões, #11) |
 | `credit_card_invoices.series[]` | 1 entrada por mês do span (mesmo eixo de `monthly_series`, meses sem fatura zerados). Uma `Invoice` cai no mês do seu **`due_date`** (§ Decisões, #8). `by_card[]` traz **todos** os cartões de `cards[]`, com `0` onde não houve fatura, para o empilhamento não “pular” cor. `total` = soma de `by_card[].amount` |
 | `expense_weekday_distribution[]` | Sempre **7 entradas**, `weekday` 0=domingo … 6=sábado (mesma numeração de `time.Weekday`). `count` = quantidade de `Movement`s de despesa; `percentage` = `count / total de despesas do período` (fração 0–1, **0** quando não há despesa) |
+| `expense_by_category[]` | Uma entrada por `Category` com despesa **paga** no período (soma de `Movement`s, exclui `internal_transfer`). Ordenado da maior despesa para a menor (em módulo). Categoria sem despesa paga no período **não aparece** — ao contrário de `by_card`, não há eixo de meses para manter estável, então não há zero-fill. `color` é a cor da própria `Category` e pode vir vazia (mesma regra do cartão, decisão #11) |
 | `kpis` | Só `total_income` e `total_expense` do período |
 | sinais | despesas e faturas sempre **negativas** |
 
@@ -148,7 +155,8 @@ AnalyticsScreen
    ├─ IncomeExpenseBarChart     ← monthly_series
    ├─ BudgetVsActualChart       ← current_month.budget
    ├─ CreditCardInvoicesChart   ← credit_card_invoices  (empilhado, na cor de cada cartão)
-   └─ ExpenseWeekdayChart       ← expense_weekday_distribution  (barras, eixo em %)
+   ├─ ExpenseWeekdayChart       ← expense_weekday_distribution  (barras, eixo em %)
+   └─ ExpenseByCategoryChart    ← expense_by_category  (uma barra por categoria, na cor de cada uma)
 ```
 
 - Acesso: menu **Mais** (não vira nova aba — a tab bar já tem 5 itens + FAB).
@@ -157,8 +165,8 @@ AnalyticsScreen
 - Estados: skeletons no loading; empty-state por componente.
 - Gráficos: svg + d3-scale (sem dependência nova).
 - **Eixo Y:** todo gráfico de barras em dinheiro (`IncomeExpenseBarChart`,
-  `BudgetVsActualChart`, `CreditCardInvoicesChart`) desenha eixo vertical com ticks
-  rotulados em **R$**, formatados pelo locale do usuário (§ Decisões, #9).
+  `BudgetVsActualChart`, `CreditCardInvoicesChart`, `ExpenseByCategoryChart`) desenha eixo
+  vertical com ticks rotulados em **R$**, formatados pelo locale do usuário (§ Decisões, #9).
   `ExpenseWeekdayChart` é o único com eixo em **%**.
 
 ### Web (não implementado)
@@ -182,6 +190,7 @@ Quando for construído, consome o mesmo contrato: item de primeiro nível na sid
 | 9 | Eixo Y rotulado em R$ nos gráficos de dinheiro | Sem escala, a barra só dá ordem relativa; o usuário pediu leitura de valor absoluto direto do gráfico |
 | 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
 | 11 | A cor do cartão viaja no contrato (`cards[].color`), e não é buscada à parte pelo cliente | O gráfico fica com a cor que o usuário já reconhece do cartão. Custa zero: o repositório de `Invoice` já faz `Preload("CreditCard")`. A alternativa — o cliente buscar os cartões num segundo request e cruzar por id — traria duas fontes para o mesmo dado, um round-trip extra e o risco de não achar cartão excluído no meio do período. **A api não inventa cor:** se não houver, manda vazio, e o fallback (paleta do app) é decisão de apresentação de cada cliente |
+| 12 | `expense_by_category` soma o período inteiro (não é série mensal) e omite categoria sem despesa paga, ao invés de zero-preencher como `by_card` | Não há eixo de meses a manter estável aqui — é uma barra por categoria, não uma pilha que precisa de posição/cor consistente mês a mês. Zero-preencher só infiltraria categorias vazias sem ganho nenhum. Segue a regra geral de "realizado" (pagos, decisão #2) e exclui `internal_transfer`, mesma exclusão da decisão #7, para não herdar a lacuna aberta do `GetExpenseMovements` |
 
 ## Decisões relacionadas
 
@@ -193,6 +202,9 @@ nem decisão de produto formal registrada.
 - [ ] **SPEC-002@web + implementação web** — o web segue sem nenhuma parte desta feature.
 - [ ] **Top categorias no tempo, fixo×variável, projeção de fluxo de caixa** — extensões
       futuras do mesmo endpoint/contrato, fora do MVP.
+- [ ] **Agrupar categorias pequenas em "Outros" em `expense_by_category`** — não implementado
+      nesta versão; usuário com muitas categorias no período vê uma barra por categoria, sem
+      limite.
 - [ ] **`GetExpenseMovements` inclui `internal_transfer`** — o helper de domínio da api filtra
       só por `amount < 0`, então transferências internas entram em `monthly_series` e nos KPIs,
       contrariando o GLO. A distribuição por dia da semana já as exclui (#7); alinhar o resto
