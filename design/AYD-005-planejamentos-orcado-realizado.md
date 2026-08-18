@@ -2,7 +2,7 @@
 id: AYD-005
 type: design
 title: Planejamentos — orçado × realizado (agregação no servidor)
-status: review
+status: approved
 created: 2026-08-17
 updated: 2026-08-18
 owner: Silvio Ubaldino
@@ -23,11 +23,13 @@ superseded_by: null
 > independentes, que discordam em cinco pontos. Este documento fixa o recorte canônico e o
 > contrato; não descreve implementação (isso é a `SPEC` de cada repo).
 
-> **Nota de status:** `review`. As três decisões de produto que bloqueavam este AYD foram
-> resolvidas pelo owner em 17/ago/2026 — ver "Decisões resolvidas"; o contrato abaixo já
-> reflete o resultado, com uma correção de fórmula do `result` que a resolução da decisão 1
-> tornou visível. As cinco `SPEC`s (uma por fase por repo) já estão escritas em `draft` — ver
-> `children` e a tabela de Fases.
+> **Nota de status:** `approved` (18/ago/2026) — **a Fase 1 está concluída**. As três decisões
+> de produto que bloqueavam este AYD foram resolvidas pelo owner em 17/ago/2026 — ver
+> "Decisões resolvidas"; o contrato abaixo já reflete o resultado, com uma correção de fórmula
+> do `result` que a resolução da decisão 1 tornou visível. A partir daqui o contrato é **fonte
+> da verdade vigente**: as `SPEC`s implementam, não redefinem — mudar campo ou semântica é
+> voltar aqui primeiro (`conventions.md` §5). As cinco `SPEC`s (uma por fase por repo) seguem
+> em `draft` até a sua fase ser executada — ver `children` e a tabela de Fases.
 
 > **Formato das entregas:** cada repo entrega **um doc só** — a `SPEC`, com o plano de
 > implementação embutido. O `PLAN` separado foi retirado do framework na mesma revisão
@@ -312,7 +314,7 @@ apenas para o `CategoryDetailsModal`, que precisa da lista e não do agregado.
 
 | Fase | Repo | Entrega |
 |---|---|---|
-| 1 | context | Este AYD em `review` (feito) → `approved`; as três decisões estão resolvidas |
+| 1 | context | ✅ **Concluída (18/ago/2026)** — as três decisões resolvidas e este AYD em `approved`; o contrato está congelado e a Fase 2 pode começar |
 | 2 | api | `SPEC-002@api` (com o plano embutido); usecase de summary; **correção de `GetSumByCategory` / `GetEstimateByCategory`**; normalização de sinal na escrita; swagger; endpoints antigos intactos |
 | 3 | web · mobile (paralelo) | `SPEC-003@web` e `SPEC-004@mobile`; consumir o summary; apagar a agregação local (inclui os dois `useEstimateBalance` órfãos) |
 | 3.5 | web | `SPEC-005@web` — migrar o CRUD de `Estimate` para `/v2/estimate/*` (decisão 3); pré-requisito da Fase 4 |
