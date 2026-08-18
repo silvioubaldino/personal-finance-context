@@ -4,7 +4,7 @@ type: design
 title: Planejamentos — orçado × realizado (agregação no servidor)
 status: review
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-18
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -422,9 +422,12 @@ já lendo o summary.
       sinal na escrita, o `normalizeEstimateAmount`@web sai junto com `SPEC-005@web`, mas o
       ternário inline do `EstimateModal`@mobile fica sem SPEC (a `SPEC-004@mobile` é só
       leitura). Item pequeno, sem contrato envolvido; pode ir num PR de limpeza.
-- [ ] **Onboarding do web no framework de docs** — o web recebeu `docs/specs/`, mas não tem
-      `docs/shared/` (sync do contexto), `docs/conventions/` nem `docs/technical_decisions/`
-      como api e mobile. Não bloqueia as SPECs; fica como dívida do framework.
+- [x] **Onboarding do web no framework de docs** — feito em 18/ago/2026, no mínimo necessário
+      para destravar este AYD: `docs/scripts/sync-context.sh` (+ `npm run sync:context`) com
+      `docs/shared/` gitignorado, templates de `SPEC`/`TDR`, `docs/conventions/` e o header de
+      política do `CHANGELOG.md`. As convenções do web são propositalmente enxutas (delegam o
+      detalhe de stack ao `CLAUDE.md`) e o repo segue sem skills próprias como as do api —
+      alinhamento fino do framework fica para depois desta feature.
 - [ ] **Movimentações por categoria** — o modal de detalhes continua filtrando a lista no
       cliente. Se o payload de `GET /v2/movements/` incomodar, avaliar depois um
       `GET /v2/estimate/summary/{category_id}/movements`. Não bloqueia nada.
