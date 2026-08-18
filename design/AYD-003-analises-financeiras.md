@@ -4,7 +4,7 @@ type: design
 title: Análises financeiras (visão ao longo do tempo)
 status: draft
 created: 2026-06-25
-updated: 2026-08-18
+updated: 2026-08-20
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -160,7 +160,11 @@ AnalyticsScreen
 ```
 
 - Acesso: menu **Mais** (não vira nova aba — a tab bar já tem 5 itens + FAB).
-- Período: 1º de janeiro → fim do mês selecionado (via `MonthSelector` + contexto `useMonth`).
+- Período: início do ano **ou** do trimestre do mês selecionado → fim do mês selecionado,
+  conforme um seletor Ano/Trimestre na própria tela (`MonthSelector` + `useMonth` +
+  `PeriodScopeToggle`). Trimestre segue o calendário civil do mês selecionado (ex.: março →
+  1º trimestre, início em 1º de janeiro). Mesmo endpoint, mesmo contrato — o escopo é só a
+  escolha de `from` no cliente, sem campo novo na resposta.
 - Cache: React Query (`staleTime` 5 min, `gc` 10 min); chave inclui `from`/`to`.
 - Estados: skeletons no loading; empty-state por componente.
 - Gráficos: svg + d3-scale (sem dependência nova).
@@ -191,6 +195,7 @@ Quando for construído, consome o mesmo contrato: item de primeiro nível na sid
 | 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
 | 11 | A cor do cartão viaja no contrato (`cards[].color`), e não é buscada à parte pelo cliente | O gráfico fica com a cor que o usuário já reconhece do cartão. Custa zero: o repositório de `Invoice` já faz `Preload("CreditCard")`. A alternativa — o cliente buscar os cartões num segundo request e cruzar por id — traria duas fontes para o mesmo dado, um round-trip extra e o risco de não achar cartão excluído no meio do período. **A api não inventa cor:** se não houver, manda vazio, e o fallback (paleta do app) é decisão de apresentação de cada cliente |
 | 12 | `expense_by_category` soma o período inteiro (não é série mensal) e omite categoria sem despesa paga, ao invés de zero-preencher como `by_card` | Não há eixo de meses a manter estável aqui — é uma barra por categoria, não uma pilha que precisa de posição/cor consistente mês a mês. Zero-preencher só infiltraria categorias vazias sem ganho nenhum. Segue a regra geral de "realizado" (pagos, decisão #2) e exclui `internal_transfer`, mesma exclusão da decisão #7, para não herdar a lacuna aberta do `GetExpenseMovements` |
+| 13 | Alternância Ano/Trimestre é um seletor de `from` no cliente, não um parâmetro novo no contrato | O endpoint já é genérico em período — qualquer `from`/`to` válido funciona. Adicionar um `scope=year\|quarter` na api replicaria no backend uma regra (mapear mês → início do trimestre) que o cliente já precisa saber para desenhar o seletor, e criaria dois jeitos de pedir o mesmo dado. Trimestre é sempre calculado a partir do mês selecionado (não do mês corrente do relógio) — março pertence ao 1º trimestre mesmo se hoje for agosto |
 
 ## Decisões relacionadas
 
