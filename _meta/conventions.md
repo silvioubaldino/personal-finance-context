@@ -108,9 +108,16 @@ Ao alterar um doc:
 ## 9. Changelog
 
 Inglês, [Keep a Changelog](https://keepachangelog.com) + [SemVer](https://semver.org),
-ordem invertida (recente no topo), **uma linha por PR**. A política completa (formato do
-bloco `Unreleased`, recorte por versão, o que a linha descreve) mora no **header do próprio
-`changelog.md`** de cada repo — é lá que se consulta ao escrever uma entrada.
+ordem invertida (recente no topo), **uma linha por PR**.
+
+A linha diz **o que foi entregue** — não o *como*, não o *porquê*, e nada de detalhe do
+framework de docs (SPEC/PLAN/AYD são rastreados pelos próprios arquivos e pelo git). Se um PR
+só adiciona uma SPEC, a linha resume a feature que ela abre. **Limite de 350 caracteres por
+linha, incluindo a URL do PR** — não coube, é porque a linha está explicando como ou por quê:
+corta isso, não o fato. O detalhe mora no doc (SPEC/AYD) e no git.
+
+O resto da política (formato do bloco `Unreleased`, recorte por versão) mora no **header do
+próprio `changelog.md`** de cada repo — é lá que se consulta ao escrever uma entrada.
 
 ## 10. Convenções de diagramas
 

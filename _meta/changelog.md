@@ -10,7 +10,9 @@ owner: Silvio Ubaldino
 # Changelog — Context
 
 All notable changes to the shared docs (PROD, REQ, AYD, ROAD, decisions) are documented
-here. This is where the audit trail of the "why" behind the **living** documents lives.
+here — **what** changed in each of them, so the living docs have a trail of edits. The
+**why** is not repeated here: it lives inside the doc that changed (an AYD states its own
+rationale, a PDR/ADR *is* the rationale).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this
 repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
