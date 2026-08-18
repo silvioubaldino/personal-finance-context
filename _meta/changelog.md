@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-06-29
+updated: 2026-08-21
 owner: Silvio Ubaldino
 ---
 
@@ -20,41 +20,24 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Unreleased:** unreleased work accrues under `## Unreleased` (always the top block), with
   no date/version. On the PRs, `## Unreleased` becomes `## [dd-MM-yyyy - vX.Y.Z]`
   (SemVer) and a new empty `## Unreleased` is opened above it.
-- **One line per PR:** each PR adds a **single line** describing summarized what it delivers — general,
-  no implementation or docs-framework detail; reference the PR (e.g. `[PR#02](url)`). The
-  line **may omit SPEC/PLAN additions** (tracked by their own files/git): if a PR only adds a
-  SPEC/PLAN, summarize the feature they open.
+- **One line per PR, ≤350 characters:** each PR adds a **single line**, at most 350
+  characters, stating **what** changed — never the how or the why (implementation details,
+  rationale, and docs-framework mechanics stay out); reference the PR (e.g. `[PR#02](url)`).
+  The line **may omit SPEC/PLAN additions** (tracked by their own files/git): if a PR only
+  adds a SPEC/PLAN, summarize the feature they open.
 
 ## Unreleased
 
-- Updated AYD-003 (financial analytics): added a Month option to the period scope toggle
-  (Month/Quarter/Year), still a client-side `from` choice with no contract change.
-- Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle — a
-  client-side period choice reusing the existing endpoint, no new contract field.
-- Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown,
-  sorted largest to smallest.
-- Updated AYD-003 (financial analytics): dropped the four period KPIs, added credit card
-  invoice totals stacked by card (carrying each card's own colour) and an expense-count
-  distribution by weekday, and required a labelled currency axis on the money bar charts;
-  linked SPEC-002@api and SPEC-002@mobile.
-- Updated AYD-002 + ARCH (observability): unified web and mobile telemetry onto a single
-  ingestion contract (`POST /v1/telemetry` → sidecar), dropping the web's direct
-  `@vercel/otel`→Grafana path and the mobile Crashlytics/GA4/BigQuery client-side plan
-  from the design and diagram; web now emits perceived request latency
-  (`app_http_client_request_duration_seconds`). ARCH now draws the client telemetry
-  ingestion path and records Vercel RUM as a separate native pane (kept configured, not
-  bridged into Grafana). Trace preparation (Tempo, Fase 6) kept for the future.
-- Added AYD-004 (credit card invoice import design: layered statement/invoice
-  differentiation, `confirm-invoice` contract reusing the existing `InvoiceUseCase`,
-  phased rollout), covering api, web and mobile; sourced from `personal-finance`'s
-  `AyDimportfatura.md` design notes; linked as a child of REQ-001.
-- Added AYD-003 (financial analytics design: trends over time, budget vs. actual,
-  savings-rate KPIs), covering api, web and mobile; linked as a child of REQ-001.
-- Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
-  `biz_*` business KPI catalog, SLO targets and rollout phases), the first real AYD,
-  sourced from `personal-finance`'s informal design notes (`AyDmonitoramento.md` /
-  `diagramainframonitoramento.md`); linked as a child of REQ-001.
-- Filled in GLO, PROD-001, REQ-001 and ARCH from product/code analysis (vision, personas,
-  functional and non-functional requirements, business rules and the C4 container view for the
-  features already in production); renamed `Transfer` to `InternalTransfer` in GLO per review.
+- Updated AYD-003 (financial analytics): added a Month option to the period scope toggle.
+- Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle.
+- Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown.
+- Updated AYD-003 (financial analytics): replaced the period KPIs with total income/expense,
+  added credit card invoice totals by card and an expense distribution by weekday, and
+  added currency axes to the money charts.
+- Updated AYD-002 and ARCH (observability): unified web and mobile telemetry onto a single
+  ingestion contract and updated the architecture diagram.
+- Added AYD-004: credit card invoice import design, covering api, web and mobile.
+- Added AYD-003: financial analytics design, covering api, web and mobile.
+- Added AYD-002: monitoring and observability design, covering api, web and mobile.
+- Filled in GLO, PROD-001, REQ-001 and ARCH from product and code analysis.
 - Documentation initialized from the scaffold.
