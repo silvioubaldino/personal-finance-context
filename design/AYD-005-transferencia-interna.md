@@ -16,12 +16,14 @@ superseded_by: null
 
 # AYD-005: Transferência interna entre carteiras
 
-> **Nota de status:** feature **parcialmente implementada e não concluída**. A api tem o
-> endpoint, a migração e o `TypePayment`; o web tem cliente HTTP, hook e o formulário
-> inteiro — mas **nenhum botão liga o modo transferência**, então a feature é inalcançável
-> pelo usuário. O mobile tem só o hook. Além disso, várias métricas de despesa ainda
-> **contam** a transferência, que é justamente o que a feature existe para evitar. Este AYD
-> formaliza o contrato já existente e fecha as lacunas que faltam para concluir.
+> **Nota de status:** feature **parcialmente implementada e não concluída**. A api já tem os
+> cinco endpoints do par (`POST`/`PUT`/`DELETE`/`pay`/`revert-pay`), a migração e o
+> `TypePayment`, com o par sempre operado como unidade (decisão #12); o web tem cliente
+> HTTP, hook e o formulário inteiro — mas **nenhum botão liga o modo transferência**, então a
+> feature é inalcançável pelo usuário. O mobile tem só o hook. Além disso, várias métricas de
+> despesa ainda **contam** a transferência, que é justamente o que a feature existe para
+> evitar. Este AYD formaliza o contrato já existente e fecha as lacunas que faltam para
+> concluir.
 
 ## Objetivo
 
@@ -46,11 +48,18 @@ Ver `GLO` → **InternalTransfer**: não é entidade própria, é um par de `Mov
 
 | Repo | Papel nesta feature | Estado |
 |------|---------------------|--------|
-| api | Dona do contrato. Cria o par transacionalmente, ajusta `Balance`, e **exclui** `internal_transfer` de toda agregação de receita/despesa | **Parcial** — endpoint pronto; exclusão das métricas incompleta; validações mapeiam para 500 |
+| api | Dona do contrato. Cria/atualiza/apaga/liquida o par transacionalmente (sempre como unidade), ajusta `Balance`, e **exclui** `internal_transfer` de toda agregação de receita/despesa | **Parcial** — os cinco endpoints do par estão prontos e mapeados para os HTTP corretos; exclusão das métricas ainda incompleta |
 | web | Formulário de transferência (origem/destino/valor/data/pago) + exibição na lista | **Parcial** — todo o código existe, mas o modo transferência é inalcançável na UI |
 | mobile | Mesmo formulário e mesma exclusão de métricas | **Parcial** — só `useCreateTransfer`; sem UI de criação |
 
 ## Contrato (fonte da verdade)
+
+O par (`pair_id`) é sempre operado como unidade — nunca existe operação por
+`movement_id` isolado numa perna de `internal_transfer` (decisão #12). As cinco rotas
+abaixo cobrem o ciclo de vida completo do par: criar, atualizar, apagar, liquidar e
+reverter liquidação.
+
+### Criar
 
 ```
 POST /v2/transfers/
@@ -97,17 +106,75 @@ Categorias fixas (seed, `user_id = default_category_id`, migração `010`):
 | Saída | `c1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6` | Transferência interna - saída | `false` |
 | Entrada | `c2b3c4d5-e6f7-a8b9-c0d1-e2f3a4b5c6d7` | Transferência interna - entrada | `true` |
 
-Erros:
+### Atualizar
 
-| Situação | Sentinel (api) | HTTP **esperado** | HTTP **atual** |
+```
+PUT /v2/transfers/{pair_id}
+Auth: Firebase (header user_token)
+```
+
+Substitui as duas pernas do par por um novo `origin_wallet_id`/`destination_wallet_id`/
+`amount`/`date`/`description` — mesmo shape de campos do `POST`, sem `is_paid` (o estado de
+pagamento não muda por aqui; ver `pay`/`revert-pay`). Se o par já estava pago
+(`is_paid: true`), os dois `Balance`s são recalculados atomicamente na mesma transação:
+reverte o efeito das pernas antigas e aplica o das novas, com um único write líquido por
+carteira mesmo quando a mesma carteira aparece nos dois lados (ex.: só o valor mudou) — ver
+`walletBalanceChanges` na seção "Consumidores" abaixo. Se o par estava agendado
+(`is_paid: false`), só as pernas são atualizadas; nenhum saldo se move.
+
+Response (`200`): mesmo shape do `POST`.
+
+### Apagar
+
+```
+DELETE /v2/transfers/{pair_id}
+Auth: Firebase (header user_token)
+```
+
+Remove as duas pernas do par. Se estava pago, reverte o efeito nas duas carteiras
+atomicamente antes de apagar. Response (`204`, sem corpo).
+
+### Liquidar (`pay`)
+
+```
+POST /v2/transfers/{pair_id}/pay
+Auth: Firebase (header user_token)
+```
+
+Marca as duas pernas como `is_paid: true` e move o `Balance` das duas carteiras
+atomicamente (débito na origem, crédito no destino). Sem corpo de request. Response
+(`200`): mesmo shape do `POST`, com `is_paid: true` nas duas pernas.
+
+### Reverter liquidação (`revert-pay`)
+
+```
+POST /v2/transfers/{pair_id}/revert-pay
+Auth: Firebase (header user_token)
+```
+
+Marca as duas pernas como `is_paid: false` e desfaz o movimento de saldo nas duas
+carteiras atomicamente (estorna o crédito no destino e o débito na origem). Sem corpo de
+request. Response (`200`): mesmo shape do `POST`, com `is_paid: false` nas duas pernas.
+
+### Erros
+
+| Situação | Endpoints | Sentinel (api) | HTTP |
 |---|---|---|---|
-| JSON/data inválidos | `domain.ErrInvalidInput` | `400` | `400` ✔ |
-| Origem == destino | `ErrSameWalletTransfer` | `400` | **`500`** ✘ |
-| `amount <= 0` | `ErrInvalidTransferAmount` | `400` | **`500`** ✘ |
-| Data ausente | `ErrDateRequired` | `400` | **`500`** ✘ |
-| `Wallet` inexistente | `ErrWalletNotFound` | `404` | `404` ✔ |
-| Saldo insuficiente na origem (só se `is_paid`) | `ErrInsufficientBalance` | `422` | **`500`** ✘ |
-| Falha de repositório | — | `500` | `500` ✔ |
+| JSON/data inválidos | criar, atualizar | `domain.ErrInvalidInput` | `400` |
+| `pair_id` não é UUID válido | atualizar, apagar, pay, revert-pay | `domain.ErrInvalidInput` | `400` |
+| Origem == destino | criar, atualizar | `ErrSameWalletTransfer` | `400` |
+| `amount <= 0` | criar, atualizar | `ErrInvalidTransferAmount` | `400` |
+| Data ausente | criar, atualizar | `ErrDateRequired` | `400` |
+| Tentativa de operar uma perna isolada via `/v2/movements/{id}/...` | pay, revert-pay (e update/delete legado) | `ErrTransferMustUsePairEndpoint` | `400` |
+| `Wallet` inexistente | criar, atualizar | `ErrWalletNotFound` | `404` |
+| `pair_id` não encontrado (ou pertence a outro usuário) | atualizar, apagar, pay, revert-pay | `ErrTransferPairNotFound` | `404` |
+| Par incompleto (≠ 2 pernas) ou pernas não são `internal_transfer` | atualizar, apagar, pay, revert-pay | `ErrTransferPairMismatch` | `400` |
+| `pay` chamado com o par já `is_paid: true` | pay | `ErrMovementAlreadyPaid` | `409` |
+| `revert-pay` chamado com o par `is_paid: false` | revert-pay | `ErrMovementNotPaid` | `409` |
+| Pernas do par com `is_paid` divergente (corrupção de dados) | pay, revert-pay | `ErrTransferPairInconsistentPayment` | `409` |
+| Saldo insuficiente na origem (criar/atualizar com `is_paid`, ou `pay`) | criar, atualizar, pay | `ErrInsufficientBalance` | `422` |
+| Saldo insuficiente no destino (o que foi transferido já foi gasto) | revert-pay | `ErrInsufficientBalance` | `422` |
+| Falha de repositório | todos | — | `500` |
 
 Este contrato serve **api → web** e **api → mobile**; nenhum cliente redefine campo ou
 semântica (`conventions.md` §5).
@@ -167,19 +234,55 @@ sequenceDiagram
 
 ```
 POST /v2/transfers/
-  └─ api.TransferHandler.Add         (internal/infrastructure/api/transfer_api.go)
-       └─ usecase.Transfer.Execute   (internal/usecase/transfer_usecase.go)
+  └─ api.TransferHandler.Add          (internal/infrastructure/api/transfer_api.go)
+       └─ usecase.Transfer.Execute    (internal/usecase/transfer_usecase.go)
             ├─ WalletRepository.FindByID  (origem, destino)
             ├─ txManager.WithTransaction
             │    ├─ MovementRepository.Add ×2  (pair_id, internal_transfer)
             │    └─ WalletRepository.UpdateAmount ×2  (só se is_paid)
             └─ domain.TypePaymentInternalTransfer + categorias fixas
-                                       (internal/domain/typepayment.go)
+                                        (internal/domain/typepayment.go)
+
+PUT /v2/transfers/{pair_id}
+  └─ api.TransferHandler.Update       (internal/infrastructure/api/transfer_api.go)
+       └─ usecase.UpdateTransfer.Execute  (internal/usecase/update_transfer_usecase.go)
+            ├─ MovementRepository.FindByPairID → identifyTransferPair (internal/usecase/transfer_pair.go)
+            ├─ txManager.WithTransaction
+            │    ├─ walletBalanceChanges  (acumula deltas em memória; 1 read + 1 write por
+            │    │    carteira mesmo quando a mesma carteira aparece nos dois lados — evita
+            │    │    o bug de write duplicado corrigido nesta rodada)
+            │    └─ MovementRepository.Update ×2
+            └─ só recalcula saldo se o par já estava `is_paid`
+
+DELETE /v2/transfers/{pair_id}
+  └─ api.TransferHandler.Delete       (internal/infrastructure/api/transfer_api.go)
+       └─ usecase.DeleteTransfer.Execute  (internal/usecase/delete_transfer_usecase.go)
+            ├─ MovementRepository.FindByPairID → identifyTransferPair
+            └─ txManager.WithTransaction
+                 ├─ WalletRepository.UpdateAmount ×2  (só se estava is_paid; reverte)
+                 └─ MovementRepository.Delete ×2
+
+POST /v2/transfers/{pair_id}/pay
+POST /v2/transfers/{pair_id}/revert-pay
+  └─ api.TransferHandler.Pay / RevertPay  (internal/infrastructure/api/transfer_api.go)
+       └─ usecase.PayTransfer.Execute / Revert  (internal/usecase/pay_transfer_usecase.go)
+            ├─ MovementRepository.FindByPairID → identifyTransferPair
+            ├─ valida is_paid consistente nas duas pernas (senão ErrTransferPairInconsistentPayment)
+            ├─ valida saldo na carteira certa por direção
+            │    (pay → origem; revert-pay → destino, decisão #13)
+            └─ txManager.WithTransaction
+                 ├─ walletBalanceChanges  (1 write líquido por carteira)
+                 └─ MovementRepository.UpdateIsPaid ×2
 ```
 
 Wiring: `internal/bootstrap/transfer/setup.go`, chamado por `SetupCleanArchComponents`.
 Persistência: migração `010_add_internal_transfer` (coluna `movements.pair_id` + índice +
 seed das duas categorias). Sem tabela nova.
+
+`internal/usecase/movement_usecase.go` (`payMovement`/`RevertPay`) e o serviço legado
+(`internal/domain/movement/service/movement.go`) rejeitam com `ErrTransferMustUsePairEndpoint`
+qualquer tentativa de pagar/reverter uma perna de `internal_transfer` via
+`/v2/movements/{id}/pay` — só os endpoints acima operam o par.
 
 ### Web (formulário pronto, porta fechada)
 
@@ -216,6 +319,8 @@ métrica (`movements-view`, `PlanningScreen`) já estão corretas.
 | 10 | Exclusão feita em **cada agregado**, não filtrando na origem do `GET /v2/movements/` | A lista precisa das transferências; só os agregados não. Filtrar na fonte quebraria a decisão #9 |
 | 11 | Contagem de plano (`movements_per_month`) deve valer para a transferência, contando **1** | É uma ação do usuário, não duas. Contar 2 puniria quem transfere; contar 0 (comportamento atual) abre um bypass do limite do plano `free` |
 | 12 | Editar/apagar uma perna opera sobre **o par inteiro** | Meia transferência é um estado inválido: um saldo se mexe e o outro não |
+| 13 | `pay`/`revert-pay` são endpoints dedicados por `pair_id` (`POST /v2/transfers/{pair_id}/pay`), não `POST /v2/movements/{id}/pay` reaproveitado | Mesma razão da #12: liquidar/reverter uma perna isolada deixaria uma carteira com o saldo movido e a outra não. O endpoint de `movement` bloqueia pernas de `internal_transfer` (`ErrTransferMustUsePairEndpoint`) e devolve a operação para cá |
+| 14 | Saldo suficiente é validado na carteira **de origem** ao liquidar (`pay`) e na carteira **de destino** ao reverter (`revert-pay`) | `pay` debita a origem — ela precisa ter saldo para sair. `revert-pay` estorna o crédito do destino — ele precisa ainda ter o dinheiro que recebeu (se já foi gasto, reverter deixaria o saldo negativo) |
 
 ## Decisões relacionadas
 
@@ -226,34 +331,37 @@ registrada. Depende de `AYD-003` no ponto do `GetExpenseMovements` (questão em 
 
 ### api
 
-- [ ] **Mapear os erros de transferência no `HandleErr`** — `ErrSameWalletTransfer`,
-      `ErrInvalidTransferAmount` e `ErrDateRequired` → `400`; `ErrInsufficientBalance` →
-      `422`. Hoje os quatro caem no `default` e devolvem `500`, divergindo do próprio
-      `swagger.yaml` (que já documenta `400`/`404`/`422`).
+- [x] **Mapear os erros de transferência no `HandleErr`** — `ErrSameWalletTransfer`,
+      `ErrInvalidTransferAmount`, `ErrDateRequired` → `400`; `ErrInsufficientBalance` →
+      `422`; `ErrTransferPairNotFound` → `404`; `ErrMovementAlreadyPaid`,
+      `ErrMovementNotPaid`, `ErrTransferPairInconsistentPayment` → `409`. Todos mapeados em
+      `errors_handler.go::toAPIError`, batendo com o `swagger.yaml`.
 - [ ] **Excluir `internal_transfer` dos agregados restantes** — `monthly_series`, `kpis` e
       `current_month.budget.realized` no `dashboard_usecase`; `balance` legado
       (`/balances/period`); `estimate` por categoria. Correção na raiz:
       `MovementList.GetExpenseMovements()`/`GetIncomeMovements()` (ou um
       `GetOperationalMovements()` que filtra `internal_transfer` e `invoice_payment` antes).
-- [ ] **Pareamento em update e delete** — hoje `DELETE /movements/{id}` e
-      `PUT /movements/{id}` (serviço legado) ignoram `pair_id`: apagar uma perna deixa a
-      outra órfã e o par de saldos inconsistente; marcar uma perna como paga move só um
-      saldo. Precisa de operação por `pair_id` (apagar/atualizar/liquidar o par inteiro).
-- [ ] **Limite de plano** — `bootstrap/transfer/setup.go` não injeta o
-      `PlanLimitsValidator`; usuário `free` cria movimentações ilimitadas via
-      `/v2/transfers/` (2 por request). Aplicar `ValidateMovementCreation` contando 1
-      (decisão #11).
+- [x] **Pareamento em update, delete, pay e revert-pay** — `PUT`/`DELETE
+      /v2/transfers/{pair_id}` e os novos `POST .../pay` e `.../revert-pay` operam sempre as
+      duas pernas juntas; `/v2/movements/{id}/pay` e `.../revert-pay` (clean-arch e serviço
+      legado) rejeitam pernas de `internal_transfer` com `ErrTransferMustUsePairEndpoint`.
+      Ver decisões #12–#14 e a seção "Consumidores" acima.
+- [x] **Limite de plano** — `bootstrap/transfer/setup.go` injeta o `PlanLimitsValidator` em
+      `usecase.NewTransfer`, contando 1 por transferência (decisão #11).
 - [ ] **Esconder as duas categorias fixas do seletor de categorias** —
       `CategoryRepository.FindAll` devolve tudo que é `default_category_id`, então
       "Transferência interna - saída/entrada" aparecem no picker de movimentação, nos
       filtros e no Planejamento. (Mesma lacuna já existente na categoria de pagamento de
       fatura — decidir se corrige junto.)
-- [ ] **`GET`/`DELETE` de transferência por `pair_id`** — não existe rota para ler ou
-      desfazer uma transferência como unidade. Definir se entra agora ou se o delete pareado
-      do item anterior é suficiente para o MVP.
-- [ ] **Testes** — `transfer_usecase_test.go` cobre o caminho de criação; falta cobertura
-      para o mapeamento de erros, para as exclusões de agregado e para o par em
-      update/delete.
+- [ ] **`GET` de transferência por `pair_id`** — não existe rota para ler o par como
+      unidade (só listar as duas pernas via `GET /v2/movements/` e filtrar por `pair_id` no
+      cliente). `DELETE`, `pay` e `revert-pay` já cobrem as operações de escrita; avaliar se
+      o `GET` dedicado é necessário para o MVP ou se o filtro client-side é suficiente.
+- [x] **Testes** — `transfer_usecase_test.go`, `update_transfer_usecase_test.go`,
+      `delete_transfer_usecase_test.go` e `pay_transfer_usecase_test.go` cobrem criação,
+      atualização, remoção, liquidação e reversão, incluindo os cenários de erro (par
+      inconsistente, saldo insuficiente em cada direção, par incompleto). Falta cobertura
+      para as exclusões de agregado (item acima).
 
 ### web
 
