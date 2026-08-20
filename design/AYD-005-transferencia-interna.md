@@ -8,7 +8,7 @@ updated: 2026-08-20
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
-children: []
+children: [SPEC-003@mobile]
 related: [AYD-003, GLO]
 tags: [wallet, movement, internal-transfer]
 superseded_by: null
@@ -268,13 +268,14 @@ registrada. Depende de `AYD-003` no ponto do `GetExpenseMovements` (questão em 
       `pair_id` + as duas `MovementOutput`).
 - [ ] **Editar/apagar transferência na lista** — quando a api expuser a operação pareada,
       a lista precisa avisar que a ação afeta as duas pernas.
-- [ ] **`SPEC-00N@web`** antes de implementar.
+- [ ] **SPEC@web** — não necessária para ativar a feature (é o botão que falta); vale
+      escrever se as pendências acima virarem um trabalho maior.
 
 ### mobile
 
 - [ ] **UI de criação** — modo transferência no `MovementModal`, ligado ao
       `useCreateTransfer` já existente.
-- [ ] **`SPEC-00N@mobile`** antes de implementar.
+- [x] **`SPEC-003@mobile`** — escrita; falta implementar.
 
 ## Fora de escopo / questões em aberto
 
