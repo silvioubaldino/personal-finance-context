@@ -14,17 +14,18 @@ owner: Silvio Ubaldino
 ## Estado do produto
 - **Produto:** Personal Finance
 - **Repos:** context (este) · api (`personal-finance`) · web (`personal-finance-frontend-v2`) · mobile (`personal-finance-mobile`)
-- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento, AYD-003 análises financeiras (api/mobile em implementação, com SPEC) e AYD-004 import de fatura de cartão; ROAD e ADRs ainda pendentes)
+- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento, AYD-003 análises financeiras (api/mobile em implementação, com SPEC), AYD-004 import de fatura de cartão e AYD-005 transferência interna (parcialmente implementada, sem SPEC); ROAD e ADRs ainda pendentes)
 
 ## Grafo de documentos
 | Camada | ID | Documento | Status | Refina | Detalhado por |
 |--------|----|-----------|--------|--------|----------------|
 | Produto      | PROD-001 | Visão & estratégia | draft    | —        | REQ-001 |
-| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003, AYD-004 |
+| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003, AYD-004, AYD-005 |
 | Design       | AYD-001  | (exemplo) Feature  | draft    | REQ-001  | SPEC-001@api, SPEC-001@web |
 | Design       | AYD-002  | Monitoramento e observabilidade | draft | REQ-001 | — (nenhuma SPEC formal ainda) |
 | Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | SPEC-002@api, SPEC-002@mobile |
 | Design       | AYD-004  | Import de fatura de cartão de crédito | draft | REQ-001 | — (nenhuma SPEC ainda) |
+| Design       | AYD-005  | Transferência interna entre carteiras | draft | REQ-001 | — (nenhuma SPEC ainda) |
 | Roadmap      | ROAD-001 | Roadmap            | draft    | PROD-001 | — |
 | Decisão prod | PDR-001  | (exemplo)          | accepted | —        | — |
 | Decisão arq  | ADR-001  | (exemplo)          | accepted | —        | — |
@@ -45,7 +46,8 @@ PROD-001
    │          ├ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
    │          ├ AYD-003 (análises financeiras, real) ─┬─ SPEC-002@api
    │          │                                       └─ SPEC-002@mobile   (web: sem SPEC)
-   │          └ AYD-004 (import de fatura de cartão, real, em design) ─ (sem SPEC ainda)
+   │          ├ AYD-004 (import de fatura de cartão, real, em design) ─ (sem SPEC ainda)
+   │          └ AYD-005 (transferência interna, real, parcialmente implementada) ─ (sem SPEC ainda)
    └─ ROAD-001
 (PDR / ADR / ARCH / GLO referenciados transversalmente por todos)
  ARCH = topologia vigente (C4 vivo); atualizado quando entra/sai serviço ou integração.
