@@ -28,6 +28,7 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-005: internal transfer between wallets design, covering api, web and mobile.
 - Updated AYD-003 (financial analytics): added a Month option to the period scope toggle.
 - Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle.
 - Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown.
