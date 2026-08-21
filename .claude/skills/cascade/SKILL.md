@@ -1,7 +1,7 @@
 ---
 name: cascade
 description: >-
-  Orquestra a cascata spec-driven do Personal Finance (PROD → REQ → AYD → SPEC@repo → PLAN@repo)
+  Orquestra a cascata spec-driven do Personal Finance (PROD → REQ → AYD → SPEC@repo, um doc por repo)
   e as decisões (ADR/PDR). Use quando um pedido mexe na visão/requisitos, no design cross-repo
   e contratos (AYD), em decisões de arquitetura/produto (ADR/PDR), ou quando a mudança se
   ramifica para múltiplos repos (api/web/mobile). A skill faz triagem de esforço, roteia entre
