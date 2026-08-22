@@ -4,7 +4,7 @@ type: design
 title: Planejamentos — orçado × realizado (agregação no servidor)
 status: approved
 created: 2026-08-17
-updated: 2026-08-18
+updated: 2026-08-22
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -223,7 +223,7 @@ compartilhar:
 |---|---|---|
 | `Movement` normal do período | sim | — |
 | `Movement` pendente (`is_paid = false`) | sim, em `realized` (fora de `realized_paid`) | A tela agrega compromissos do mês, não só o que já saiu da conta — decisão 1 |
-| Compra no `CreditCard` | sim, via itens da `Invoice` | É despesa da categoria da compra, no mês da compra. Entra também em `realized_paid`: o item nasce `is_paid = true` — o que fica pendente é a `Invoice`, não a compra |
+| Compra no `CreditCard` | sim, via itens da `Invoice` | É despesa da categoria da compra. Conta no mês do `due_date` da `Invoice` que a recebe — é assim que o servidor seleciona as faturas do mês, e é o que mantém `AYD-003` fechado (ver correções de 22/ago/2026, abaixo). Entra em `realized_paid` quando a `Invoice` é paga: o item nasce `is_paid = false` e `PayByInvoiceID` o marca pago junto com ela |
 | `internal_transfer` (as duas pernas) | **não** | `GLO`: `InternalTransfer` não entra no resultado de entradas/saídas do período |
 | `invoice_payment` | **não** | As compras já entram itemizadas; contar a fatura duplica o valor |
 | `invoice_remainder` | sim, via itens da `Invoice` | Comporta-se como `credit_card`: conta no mês da `Invoice` que o recebe — decisão 2. Nasce `is_paid = false`, então entra em `realized` e fica fora de `realized_paid` |
@@ -420,6 +420,13 @@ já lendo o summary.
 - [x] **SPECs de todas as fases** — escritas em 17/ago/2026, em `draft`, uma por fase por repo
       (`SPEC-002@api`, `SPEC-003@web`, `SPEC-004@mobile`, `SPEC-005@web`, `SPEC-006@api`), cada
       uma com o plano de implementação embutido. Execução na ordem das fases.
+- [ ] **Duas afirmações deste AYD não batiam com o código, corrigidas em 22/ago/2026** — a
+      linha da compra no cartão dizia "no mês da compra" e "o item nasce `is_paid = true`". O
+      servidor conta no mês do `due_date` da `Invoice` (é como `FindDetailedInvoicesByPeriod`
+      seleciona as faturas) e o item nasce `is_paid = false` (`movement_usecase.go:155`@api),
+      virando pago só quando a fatura é paga. A tabela acima já reflete o código; **mudar a
+      regra** — atribuir pela data da compra — seria mexer em `AYD-003` e `AYD-005` juntos e
+      fica em aberto.
 - [ ] **Limpeza da normalização de sinal nos fronts** — depois que `SPEC-002@api` normalizar o
       sinal na escrita, o `normalizeEstimateAmount`@web sai junto com `SPEC-005@web`, mas o
       ternário inline do `EstimateModal`@mobile fica sem SPEC (a `SPEC-004@mobile` é só

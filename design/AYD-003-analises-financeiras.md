@@ -22,10 +22,10 @@ superseded_by: null
 > na branch `claude/spec-ayd-analise-web-22qtwa`@web — implementada com paridade de
 > visualizações e ordem com o mobile, **ainda não mergeada em `develop`**.
 >
-> **Divergência aberta:** o recorte de `type_payment` que alimenta os agregados de dinheiro
-> **não está fechado** e discorda do recorte canônico de `AYD-005` — ver
-> [§ Recorte de "realizado"](#recorte-de-realizado-divergência-aberta). O contrato (campos,
-> tipos, formato) está estável; o que está em aberto é *quais `Movement`s* cada campo soma.
+> **Recorte unificado (22/ago/2026):** os agregados de dinheiro passaram a ler o recorte
+> canônico de `AYD-005` — uma implementação de servidor só, no lugar dos três recortes que
+> conviviam na mesma resposta. Muda números que o usuário já via; ver
+> [§ Recorte de "realizado"](#recorte-de-realizado).
 
 ## Objetivo
 
@@ -50,8 +50,8 @@ deliberada na distribuição por dia da semana (§ Decisões, #7). Despesas mant
 > **Ver AYD-005.** Ele detalha o *recorte* dessa mesma definição (quais `type_payment`
 > entram e saem) e expõe o campo `realized_paid`, que é exatamente o que
 > `current_month.budget.realized` precisa aqui. As duas features devem ler a mesma
-> implementação no servidor, não duas parecidas — hoje **não leem**, ver
-> [§ Recorte de "realizado"](#recorte-de-realizado-divergência-aberta).
+> implementação no servidor, não duas parecidas — e desde 22/ago/2026 **leem**, ver
+> [§ Recorte de "realizado"](#recorte-de-realizado).
 
 ## Repos afetados e papéis
 
@@ -132,65 +132,86 @@ Erros: `from`/`to` em formato inválido ou período inválido (`period.Validate(
 Este mesmo contrato serve **api → mobile** e **api → web**; nenhum repo redefine campo ou
 semântica localmente (regra de linkagem, `conventions.md` §5).
 
-### Recorte de "realizado" (divergência aberta)
+### Recorte de "realizado"
 
-A tabela acima diz *de onde* cada número vem, mas não dizia **quais `type_payment` entram**.
-Essa omissão escondia três recortes diferentes dentro da **mesma resposta**. Levantamento de
-22/ago/2026 sobre `internal/usecase/dashboard_usecase.go`@api e
-`internal/infrastructure/repository/movement_repository.go:107`@api:
+A tabela acima diz *de onde* cada número vem; esta seção diz **quais `Movement`s** cada um
+soma. Até 22/ago/2026 essa definição não existia no doc, e o resultado eram **três recortes
+diferentes dentro da mesma resposta** — ver § Histórico, ao final da seção.
+
+**Regra vigente (decidida pelo owner em 22/ago/2026):** todos os agregados de dinheiro desta
+tela usam o **recorte canônico de `AYD-005`**, lendo a mesma implementação de servidor, não
+uma parecida.
+
+| Situação | Entra? | Onde conta |
+|---|---|---|
+| `Movement` avulso do período | sim | mês da própria data |
+| Compra no `CreditCard` | sim, via itens da `Invoice` | mês do `due_date` da fatura |
+| `invoice_remainder` | sim, via itens da `Invoice` | mês do `due_date` da fatura que o recebe |
+| `invoice_payment` | **não** | — (as compras já entram itemizadas; contá-lo duplica o cartão) |
+| `internal_transfer` | **não** | — (`GLO`: não entra no resultado do período) |
+| `Movement` na `Category` fixa de transferência interna | **não** | — (pega as linhas antigas, gravadas antes do `type_payment` existir) |
+
+Três regras derivam daí:
+
+- **Mês de um item de fatura = mês do `due_date` da `Invoice`**, não o da compra. É a mesma
+  convenção do gráfico de cartões (decisão #8) e a que `GET /v2/estimate/summary` já usa ao
+  selecionar as faturas do mês. É o que garante `sum(monthly_series) == kpis` e
+  `current_month.budget.realized == realized_paid` — atribuir pela data da compra jogaria
+  itens para fora do span, que é selecionado por `due_date`. *(Nota: a linha "no mês da
+  compra" em `AYD-005` § Recorte canônico descreve a intenção, não o que o servidor faz;
+  registrado como pendência lá.)*
+- **Receita × despesa sai da flag `is_income` da `Category`, nunca do sinal** — também parte
+  do recorte canônico. Um estorno em categoria de despesa reduz a despesa em vez de virar
+  receita. Sem `Category` carregada, cai no sinal.
+- **`current_month.budget.realized` é soma pura**, sem o teto/piso do `Balance` legacy
+  (`getBalanceSum`). Orçado 5000 com 4800 realizado passa a mostrar **4800**, não 5000.
+
+`expense_weekday_distribution` segue com pagas **e** pendentes (decisão #7), sobre esse mesmo
+conjunto — é o que finalmente entrega as compras no cartão que a decisão prometia —, mas pelo
+**dia da própria compra**, não pelo vencimento, e sem o `invoice_remainder`, que é saldo
+empurrado para a fatura seguinte e não uma compra.
+
+`credit_card_invoices` **não muda**: continua somando `Invoice.Amount` por `due_date`. É o
+único bloco que fala de fatura.
+
+**A não-duplicação é garantia do recorte, não da query.** Um `Movement` que pertence a uma
+`Invoice` é recusado na lista avulsa porque entra pelos itens dela. Antes, o que segurava o
+double-count era um `type_payment NOT IN (credit_card, invoice_remainder)` dentro de
+`MovementRepository.FindByPeriod`@api — escrito para o `Agent` (`personal-finance#167`,
+mar/2026), herdado sem intenção e sem registro em documento nenhum.
+
+**Impacto para o usuário:** os números mudam. Quem usa cartão passa a ver a despesa
+itemizada nas categorias reais em vez de um bloco "Cartão de crédito", e o "Realizado" do
+orçamento deixa de ser inflado pelo piso do orçado. Vale nota de release.
+
+<details>
+<summary><strong>Histórico — os três recortes que conviviam até 22/ago/2026</strong></summary>
 
 | Bloco do payload | `internal_transfer` | `invoice_payment` | compra no `credit_card` | `invoice_remainder` |
 |---|---|---|---|---|
-| `monthly_series` · `kpis` | fora (`GetOperationalMovements`) | **dentro** | fora (SQL) | fora (SQL) |
+| `monthly_series` · `kpis` | fora | **dentro** | fora (SQL) | fora (SQL) |
 | `current_month.budget.realized` | fora | **dentro** | fora (SQL) | fora (SQL) |
-| `expense_by_category` | fora (+ por `category_id`) | fora | fora (SQL) | fora (SQL) |
+| `expense_by_category` | fora | fora | fora (SQL) | fora (SQL) |
 | `expense_weekday_distribution` | fora | **dentro** | fora (SQL) | fora (SQL) |
-| **Recorte canônico (`AYD-005`)** | **fora** | **fora** | **dentro**, via itens da `Invoice` | **dentro**, via itens da `Invoice` |
 
-O "fora (SQL)" não é escolha desta feature: `MovementRepository.FindByPeriod` já nasceu
-com `type_payment NOT IN (credit_card, invoice_remainder)` para o `Agent`
-(`personal-finance#167`, mar/2026) e o dashboard herdou o método. **Nenhum documento
-registrava isso** — nem este AYD, nem `SPEC-002@api`.
+O que isso causava:
 
-Consequências hoje, em produção:
-
-1. **`sum(expense_by_category) ≠ kpis.total_expense`.** A diferença é exatamente o total das
-   faturas pagas no período: o KPI conta o `invoice_payment`, o gráfico de categorias não —
-   e as compras no cartão, que seriam a contraparte itemizada, nunca chegam ao usecase.
-   Para quem usa cartão, **a despesa do cartão simplesmente não aparece no gráfico de
+1. `sum(expense_by_category) ≠ kpis.total_expense` — a diferença era o total das faturas
+   pagas no período. Para quem usa cartão, **a despesa do cartão não aparecia no gráfico de
    categorias**.
-2. **`current_month.budget.realized` ≠ `realized_paid` de `GET /v2/estimate/summary`.**
-   `AYD-005` fixa que os dois são o mesmo número; hoje o de Análises soma o `invoice_payment`
-   (na `Category` genérica "Cartão de crédito") em vez das compras nas categorias reais, e
-   ainda passa pelo teto/piso do `Balance` (`getBalanceSum`), que o recorte canônico não tem.
-   A mesma linha "Orçado × Realizado" mostra valores diferentes em Análises e em
-   Planejamentos.
-3. **`expense_weekday_distribution` contradiz a decisão #7.** A decisão justifica contar
-   pendentes *para não perder as compras no cartão* — mas elas são filtradas no SQL antes de
-   chegar lá. O que o gráfico conta, no lugar delas, é **uma linha de `invoice_payment` por
-   fatura**, no dia do pagamento/vencimento. O gráfico mede vencimento de fatura, não
-   comportamento de compra.
-4. **Risco latente de duplicação.** `credit_card` e `invoice_payment` coexistem no banco, os
-   dois `is_paid = true` depois que a fatura é paga (`invoice_usecase.go`: `PayByInvoiceID`
-   marca as compras **e** `buildMovementWithAmount` cria o pagamento). Só o filtro SQL impede
-   o double-count. `internal/usecase/dashboard_usecase_test.go:479`@api chega a fixar esse
-   double-count como esperado: com `credit_card −300`, `invoice_remainder −50` e
-   `invoice_payment −350` na entrada, o teste espera `kpis.total_expense = −700` — o dobro
-   dos −350 reais. O mock devolve linhas que o repositório real nunca devolve, então o teste
-   documenta um comportamento que não existe e protege o errado.
+2. `current_month.budget.realized ≠ realized_paid` — Análises somava o `invoice_payment` na
+   `Category` genérica "Cartão de crédito" e ainda aplicava o teto/piso do `Balance`. A mesma
+   linha "Orçado × Realizado" mostrava valores diferentes em Análises e em Planejamentos.
+3. `expense_weekday_distribution` contradizia a decisão #7: contava uma linha de
+   `invoice_payment` por fatura, no dia do vencimento, no lugar das compras. Media vencimento
+   de fatura, não comportamento de compra.
+4. Duplicação latente: `credit_card` e `invoice_payment` coexistem no banco, os dois
+   `is_paid = true` depois que a fatura é paga. Só o filtro de SQL impedia o double-count — e
+   `dashboard_usecase_test.go`@api chegava a fixá-lo como esperado (`kpis.total_expense =
+   −700` para um gasto real de −350), com um mock que devolvia linhas que o repositório real
+   nunca devolve.
 
-**Direção proposta (pendente de decisão do owner):** os agregados de dinheiro desta tela
-passam a ler o **recorte canônico de `AYD-005`** — fora `internal_transfer` e
-`invoice_payment`, dentro as compras no `credit_card` e o `invoice_remainder` via itens da
-`Invoice` — reusando a mesma implementação de servidor (`realized_paid`), não uma parecida.
-`expense_weekday_distribution` segue com pagas **e** pendentes (decisão #7), mas sobre esse
-mesmo conjunto, que é o que finalmente entrega as compras no cartão prometidas pela decisão.
-`credit_card_invoices` **não muda**: continua somando `Invoice.Amount` por `due_date`, e é o
-único bloco que deve falar de fatura.
-
-Isso muda números que o usuário já vê — mesmo risco que `AYD-005` registra ("vai parecer que
-sumiu dinheiro"). Vale nota de release e virada de mês, e vale fazer junto com a Fase 2 de
-`AYD-005`, não antes: é a fase que cria o cálculo canônico único.
+</details>
 
 ### Removido nesta revisão
 
@@ -274,12 +295,12 @@ Detalhes em `SPEC-002@web`. Falta o merge em `develop`.
 | # | Decisão | Por quê |
 |---|---|---|
 | 1 | Endpoint agregador no backend | Menos payload e zero lógica de agregação duplicada nos clientes |
-| 2 | Realizado = `Movement`s pagos | Consistência com a semântica de "realizado" do `Balance`. **O recorte de `type_payment` por trás disso está em aberto** — ver § Recorte de "realizado" |
+| 2 | Realizado = `Movement`s pagos | Consistência com a semântica de "realizado" do `Balance`. Quais `Movement`s são esses vem do recorte canônico de `AYD-005` — ver § Recorte de "realizado" |
 | 3 | Mobile acessa via menu **Mais** | Tab bar já tem 5 itens + FAB |
 | 4 | Web ganharia item de sidebar de primeiro nível | Sem a restrição de espaço do mobile |
 | 5 | Realizado do orçamento filtrado ao mês de `to` | Período é multi-mês (≠ `Balance`); evita somar o período inteiro |
 | 6 | Cada cliente usa sua lib de gráfico já existente (mobile: svg+d3-scale; web: recharts) | O contrato é o mesmo; a renderização não precisa ser |
-| 7 | Distribuição por dia da semana conta **todas** as despesas do período (pagas **e** pendentes), excluindo `internal_transfer` | Mede **comportamento de compra**, não caixa realizado. Compra no cartão fica `is_paid: false` até a `Invoice` ser paga — filtrar por pago apagaria justamente as compras de cartão e distorceria o gráfico. `InternalTransfer` é movimento entre `Wallet`s do próprio usuário, não compra (ver GLO). **A implementação não cumpre a decisão:** as compras no cartão são filtradas antes, no repositório — ver § Recorte de "realizado", consequência 3 |
+| 7 | Distribuição por dia da semana conta **todas** as despesas do período (pagas **e** pendentes), excluindo `internal_transfer` | Mede **comportamento de compra**, não caixa realizado. Compra no cartão fica `is_paid: false` até a `Invoice` ser paga — filtrar por pago apagaria justamente as compras de cartão e distorceria o gráfico. `InternalTransfer` é movimento entre `Wallet`s do próprio usuário, não compra (ver GLO). Desde 22/ago/2026 as compras no cartão de fato chegam ao gráfico, pelos itens da `Invoice`; o `invoice_remainder` fica fora, por não ser compra — ver § Recorte de "realizado" |
 | 8 | `Invoice` entra no mês do seu `due_date` | É a convenção que a api já usa (`InvoiceRepository.FindByMonth` filtra por `due_date`); "fatura de agosto" = a que vence em agosto |
 | 9 | Eixo Y rotulado em R$ nos gráficos de dinheiro | Sem escala, a barra só dá ordem relativa; o usuário pediu leitura de valor absoluto direto do gráfico |
 | 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
@@ -300,10 +321,13 @@ nem decisão de produto formal registrada.
       `personal-finance#224` e `#226`: `monthly_series` e `current_month` passaram por
       `GetOperationalMovements` e `expense_by_category` ganhou também o filtro pelos
       `category_id` de transferência interna.
-- [ ] **Unificar o recorte de "realizado" com o canônico de `AYD-005`** — decisão do owner
-      pendente; ver [§ Recorte de "realizado"](#recorte-de-realizado-divergência-aberta).
-      Enquanto não for tomada, `sum(expense_by_category) ≠ kpis.total_expense` para quem usa
-      cartão, e `current_month.budget.realized` diverge de `realized_paid`.
+- [x] **Unificar o recorte de "realizado" com o canônico de `AYD-005`** — decidido pelo owner
+      e implementado em 22/ago/2026 (`personal-finance#227`); ver
+      [§ Recorte de "realizado"](#recorte-de-realizado).
+- [ ] **`AYD-005` diz "no mês da compra" para o item de cartão** — o servidor conta no mês do
+      `due_date` da `Invoice`, tanto no summary de planejamentos quanto aqui. A regra vigente
+      é a do `due_date` (é o que fecha `sum(monthly_series) == kpis`); corrigir o texto de
+      `AYD-005`, ou mudar a regra nos dois, é uma edição à parte naquele AYD.
 - [ ] **Colisão de ID `SPEC-002@api`** — o repo api tem dois docs com `id: SPEC-002`
       (`docs/specs/SPEC-002-financial-analytics.md`, filho deste AYD, e
       `docs/specs/SPEC-002-estimate-summary.md`, filho de `AYD-005`). IDs são globais no
