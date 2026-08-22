@@ -24,7 +24,7 @@ owner: Silvio Ubaldino
 | Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003, AYD-004, AYD-005 |
 | Design       | AYD-001  | (exemplo) Feature  | draft    | REQ-001  | SPEC-001@api, SPEC-001@web |
 | Design       | AYD-002  | Monitoramento e observabilidade | draft | REQ-001 | — (nenhuma SPEC formal ainda) |
-| Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | SPEC-002@api, SPEC-002@mobile |
+| Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | SPEC-002@api, SPEC-002@mobile, SPEC-002@web |
 | Design       | AYD-004  | Import de fatura de cartão de crédito | draft | REQ-001 | — (nenhuma SPEC ainda) |
 | Design       | AYD-005  | Transferência interna entre carteiras | draft | REQ-001 | SPEC-003@mobile |
 | Design       | AYD-005  | Planejamentos — orçado × realizado (agregação no servidor) | draft | REQ-001 | — (nenhuma SPEC ainda) |
@@ -48,7 +48,8 @@ PROD-001
    │                                 (1 SPEC por repo = spec + plano no mesmo doc)
    │          ├ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
    │          ├ AYD-003 (análises financeiras, real) ─┬─ SPEC-002@api
-   │          │                                       └─ SPEC-002@mobile   (web: sem SPEC)
+   │          │                                       ├─ SPEC-002@mobile
+   │          │                                       └─ SPEC-002@web
    │          ├ AYD-004 (import de fatura de cartão, real, em design) ─ (sem SPEC ainda)
    │          └ AYD-005 (transferência interna, real, parcialmente implementada) ─ SPEC-003@mobile
    │          ├ AYD-003 (análises financeiras, real, em design) ─ (sem SPEC ainda)

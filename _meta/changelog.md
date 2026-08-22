@@ -30,6 +30,10 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): recorded the web as implemented, restated the screen
+  as five visualizations plus KPIs in the shipped order, and documented the type_payment cut
+  behind every money aggregate — three cuts in one response, diverging from AYD-005's
+  canonical one.
 - Added AYD-005: internal transfer between wallets design, covering api, web and mobile.
 - Updated AYD-003 (financial analytics): added a Month option to the period scope toggle.
 - Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle.
