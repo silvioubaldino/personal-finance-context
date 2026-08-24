@@ -30,6 +30,9 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): pinned the payload's reconciliation invariants —
+  expenses by category, the monthly series and the KPIs must add up to the same totals, and a
+  category whose period closes positive stays in the array.
 - Updated AYD-003 (financial analytics): the money aggregates now use AYD-005's canonical
   realized cut — the credit card is counted once, itemized by its real categories, and
   "Realizado" is the plain paid sum. User-facing numbers change.

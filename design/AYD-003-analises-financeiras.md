@@ -162,7 +162,9 @@ Três regras derivam daí:
   registrado como pendência lá.)*
 - **Receita × despesa sai da flag `is_income` da `Category`, nunca do sinal** — também parte
   do recorte canônico. Um estorno em categoria de despesa reduz a despesa em vez de virar
-  receita. Sem `Category` carregada, cai no sinal.
+  receita. `Movement` sem `Category` fica **fora de todos os agregados de dinheiro**: não há
+  como classificá-lo nem agrupá-lo, e é o mesmo corte de `aggregateRealized`, no summary de
+  planejamentos. O `GLO` já diz que `Category` é obrigatória em todo `Movement`.
 - **`current_month.budget.realized` é soma pura**, sem o teto/piso do `Balance` legacy
   (`getBalanceSum`). Orçado 5000 com 4800 realizado passa a mostrar **4800**, não 5000.
 
@@ -173,6 +175,33 @@ empurrado para a fatura seguinte e não uma compra.
 
 `credit_card_invoices` **não muda**: continua somando `Invoice.Amount` por `due_date`. É o
 único bloco que fala de fatura.
+
+#### Invariantes de conciliação
+
+Os blocos não são listas independentes: **todos os agregados de dinheiro saem da mesma base**
+(recorte canônico ∩ pagas ∩ com `Category`), sem nenhum filtro extra por bloco. O contrato
+garante, e a api testa:
+
+```
+sum(expense_by_category[].total) == kpis.total_expense == sum(monthly_series[].expense)
+sum(monthly_series[].income)     == kpis.total_income
+monthly_series[mês de `to`]      == current_month.budget.{income,expense}.realized
+monthly_series[].net             == income + expense
+```
+
+Dois blocos **não** entram nessas igualdades, de propósito:
+
+- `expense_weekday_distribution` conta **quantidade**, não dinheiro, e é a única exceção que
+  aceita pendente (decisão #7).
+- `credit_card_invoices` é outra lente: soma `Invoice.Amount` por `due_date`, o que inclui
+  compras ainda não pagas. Uma fatura em aberto aparece aqui e **não** nos agregados de
+  dinheiro — só entra quando é paga.
+
+**Consequência para o cliente:** uma `Category` de despesa pode vir com `total` **positivo**
+(estorno maior que o gasto no período). Ela permanece no array porque é ela que faz a soma
+fechar — omiti-la quebraria o primeiro invariante. Quem desenha barras deve filtrar por
+`total < 0` **antes** de tirar o módulo; aplicar `Math.abs` primeiro transforma o estorno numa
+barra de gasto e infla o total da tela.
 
 **A não-duplicação é garantia do recorte, não da query.** Um `Movement` que pertence a uma
 `Invoice` é recusado na lista avulsa porque entra pelos itens dela. Antes, o que segurava o
