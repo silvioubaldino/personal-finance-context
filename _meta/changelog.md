@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-08-21
+updated: 2026-08-24
 owner: Silvio Ubaldino
 ---
 
@@ -30,6 +30,12 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-006 (import fallback category): uncategorized inflows from a statement import no
+  longer land in an expense category — the fallback now has an income flavor, chosen by sign
+  at write time, plus a backfill for the rows already stored. User-facing numbers change.
+- Updated AYD-003 (financial analytics): recorded the category-total divergence — the client
+  totals expenses from the KPI instead of the drawn bars, and signals categories omitted for
+  closing positive.
 - Updated AYD-003 (financial analytics): pinned the payload's reconciliation invariants —
   expenses by category, the monthly series and the KPIs must add up to the same totals, and a
   category whose period closes positive stays in the array.

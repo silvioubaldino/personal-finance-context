@@ -4,12 +4,12 @@ type: design
 title: Análises financeiras (visão ao longo do tempo)
 status: draft
 created: 2026-06-25
-updated: 2026-08-22
+updated: 2026-08-24
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
 children: [SPEC-002@api, SPEC-002@mobile, SPEC-002@web]
-related: [AYD-005, GLO]
+related: [AYD-005, AYD-006, GLO]
 tags: [analytics, dashboard]
 superseded_by: null
 ---
@@ -26,6 +26,12 @@ superseded_by: null
 > canônico de `AYD-005` — uma implementação de servidor só, no lugar dos três recortes que
 > conviviam na mesma resposta. Muda números que o usuário já via; ver
 > [§ Recorte de "realizado"](#recorte-de-realizado).
+>
+> **Divergência de 24/ago/2026:** com o recorte já unificado, o web ainda mostrava
+> `kpis.total_expense` e a soma de `expense_by_category` divergindo em R$ 5.300,90. São três
+> defeitos empilhados — um de renderização no cliente, um de contrato (o invariante não é
+> renderizável) e a causa raiz nos dados, que virou `AYD-006`. Ver
+> [§ Divergência de 24/ago/2026](#divergência-de-24ago2026--categoria-positiva-na-tela).
 
 ## Objetivo
 
@@ -242,6 +248,85 @@ O que isso causava:
 
 </details>
 
+### Divergência de 24/ago/2026 — categoria positiva na tela
+
+Com o recorte já unificado, o web ainda mostrava dois totais diferentes para a mesma coisa,
+no escopo "Ano":
+
+| Onde | Valor |
+|---|---|
+| KPI "Despesa total (ano)" (`kpis.total_expense`) | **−79.947,06** |
+| Card "Despesas por categoria (ano)" (soma das barras) | **85.247,96** |
+
+A investigação reproduziu os dois números em SQL, a partir da base de dinheiro descrita
+acima. Não é aproximação, é identidade — e são **três defeitos empilhados**, não um.
+
+#### 1. O cliente aplica `Math.abs` antes de filtrar
+
+`buildCategoryRanking` (`lib/charts/category-ranking.ts`@web) faz `Math.abs(point.total)` no
+`.map` e só depois `.filter(total > 0)` — que, nessa ordem, descarta apenas zeros, que a api
+nem manda. É exatamente o que § Invariantes de conciliação proíbe.
+
+Uma `Category` fechou o ano em **+2.650,45**. Somada com o sinal trocado, ela responde por
+`2 × 2.650,45 = 5.300,90` — a divergência inteira:
+
+```
+79.947,06 + 5.300,90 = 85.247,96
+```
+
+**O servidor está correto:** todos os invariantes do contrato fecham no payload. O defeito é
+de renderização, e vale conferir o mobile, que declara paridade de visualizações.
+
+#### 2. O invariante não é renderizável (defeito de contrato, não de código)
+
+Corrigir a ordem no cliente **não fecha a conta**. Com o filtro certo, o card mostraria
+82.597,51 contra um KPI de 79.947,06 — ainda 2.650,45 de diferença, porque a categoria
+positiva simplesmente desaparece da tela: não há barra de despesa negativa a desenhar.
+
+Ou seja: `sum(expense_by_category[].total) == kpis.total_expense` vale no **payload** e não
+tem como valer na **tela** enquanto existir categoria positiva. O contrato pedia ao cliente
+uma igualdade que ele não pode honrar.
+
+**Decisão:** o total exibido no cabeçalho do card de categorias sai de `kpis.total_expense`,
+**não** da soma das barras visíveis. As barras continuam sendo só as categorias negativas, em
+módulo. Quando a soma das barras não fecha com o cabeçalho, o cliente sinaliza a diferença
+(categorias omitidas por terem fechado positivas) em vez de escondê-la — é a única leitura
+honesta, e evita que o cabeçalho minta em silêncio. O `hiddenCount` que o web já tem serve ao
+agrupamento "outras" (limite de 6 linhas) e **não** cobre este caso.
+
+#### 3. Causa raiz: a categoria positiva não deveria existir — ver `AYD-006`
+
+A categoria de +2.650,45 é "Sem categoria", o fallback do import de `Statement`, que tem
+`is_income = false` fixo. Ela acumulou 14 entradas não categorizadas vindas de extrato
+(+5.530,00), que passaram a **abater despesa**. Não era estorno: era receita classificada
+como despesa.
+
+Isso é contrato de import, não de Análises, e está registrado em `AYD-006@context`
+(categoria de fallback em duas flavors + backfill).
+
+**Consequência incômoda: hoje nenhum dos dois números da tela está certo.** Com o backfill do
+`AYD-006`, a despesa correta do ano medido é **−85.477,06**. O KPI (−79.947,06) subestimava
+a despesa em exatamente os 5.530,00 de entradas; o card (85.247,96) errava por outro caminho
+e caía a 229,10 do valor certo **por coincidência**. Corrigido o dado, nenhuma categoria fica
+positiva e os dois números coincidem em 85.477,06 — sem depender da decisão do item 2, que
+segue valendo para o caso legítimo (estorno real maior que o gasto).
+
+#### Ações
+
+| # | Repo | Ação | Depende de |
+|---|---|---|---|
+| 1 | web | Filtrar `total < 0` **antes** do `Math.abs` em `buildCategoryRanking` | — |
+| 2 | web | Cabeçalho do card lê `kpis.total_expense`; sinalizar categorias omitidas | 1 |
+| 3 | mobile | Auditar o mesmo ponto (paridade declarada) e aplicar 1 e 2 | — |
+| 4 | api | Categoria de fallback em duas flavors + backfill | `AYD-006` |
+| 5 | api | `buildExpenseWeekdayDistribution` classifica por **sinal**, não por `is_income` | — |
+
+A ação 5 é achado lateral desta investigação: `dashboard_usecase.go`@api pula
+`Amount >= 0` em vez de consultar `is_income`, contra a regra geral do recorte. Efeito real
+medido: um `Movement` de −713,24 numa `Category` de receita conta como despesa na
+distribuição por dia da semana. Não afeta nenhum agregado de dinheiro — a distribuição conta
+quantidade e já está fora dos invariantes —, mas é inconsistência com a regra declarada.
+
 ### Removido nesta revisão
 
 `kpis` deixou de expor `avg_monthly_income`, `avg_monthly_expense`, `period_net` e
@@ -362,6 +447,11 @@ nem decisão de produto formal registrada.
       `docs/specs/SPEC-002-estimate-summary.md`, filho de `AYD-005`). IDs são globais no
       produto (`conventions.md` §3), então a referência `SPEC-002@api` é ambígua nos
       `children` dos dois AYDs. Renumerar um dos dois é correção de doc, à parte.
+- [ ] **Aplicar as ações da divergência de 24/ago/2026** — web (ordem do `Math.abs` e
+      cabeçalho vindo do KPI), mobile (mesma auditoria) e api (classificação por sinal na
+      distribuição por dia da semana). Ver
+      [§ Divergência de 24/ago/2026](#divergência-de-24ago2026--categoria-positiva-na-tela).
+      A causa raiz é tratada à parte, em `AYD-006`.
 - [ ] **Top categorias no tempo, fixo×variável, projeção de fluxo de caixa** — extensões
       futuras do mesmo endpoint/contrato, fora do MVP.
 - [ ] **Agrupar categorias pequenas em "Outros" em `expense_by_category`** — não implementado
