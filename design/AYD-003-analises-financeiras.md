@@ -4,7 +4,7 @@ type: design
 title: Análises financeiras (visão ao longo do tempo)
 status: draft
 created: 2026-06-25
-updated: 2026-08-24
+updated: 2026-08-25
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -315,9 +315,9 @@ segue valendo para o caso legítimo (estorno real maior que o gasto).
 
 | # | Repo | Ação | Depende de |
 |---|---|---|---|
-| 1 | web | Filtrar `total < 0` **antes** do `Math.abs` em `buildCategoryRanking` | — |
-| 2 | web | Cabeçalho do card lê `kpis.total_expense`; sinalizar categorias omitidas | 1 |
-| 3 | mobile | Auditar o mesmo ponto (paridade declarada) e aplicar 1 e 2 | — |
+| 1 | web | Filtrar `total < 0` **antes** do `Math.abs` em `buildCategoryRanking` — **feito** (25/ago/2026) | — |
+| 2 | web | Cabeçalho do card lê `kpis.total_expense`; sinalizar categorias omitidas — **feito** (25/ago/2026) | 1 |
+| 3 | mobile | Auditar o mesmo ponto (paridade declarada) e aplicar 1 e 2 — **feito** (25/ago/2026): a auditoria confirmou o mesmo defeito, corrigido do mesmo jeito | — |
 | 4 | api | Categoria de fallback em duas flavors + backfill | `AYD-006` |
 | 5 | api | `buildExpenseWeekdayDistribution` classifica por **sinal**, não por `is_income` | — |
 
@@ -448,8 +448,9 @@ nem decisão de produto formal registrada.
       produto (`conventions.md` §3), então a referência `SPEC-002@api` é ambígua nos
       `children` dos dois AYDs. Renumerar um dos dois é correção de doc, à parte.
 - [ ] **Aplicar as ações da divergência de 24/ago/2026** — web (ordem do `Math.abs` e
-      cabeçalho vindo do KPI), mobile (mesma auditoria) e api (classificação por sinal na
-      distribuição por dia da semana). Ver
+      cabeçalho vindo do KPI) e mobile (mesma auditoria, mesmo defeito) **feitos** em
+      25/ago/2026, nos dois clientes, com o aviso de categorias omitidas; falta a api
+      (ação 5: classificação por sinal na distribuição por dia da semana). Ver
       [§ Divergência de 24/ago/2026](#divergência-de-24ago2026--categoria-positiva-na-tela).
       A causa raiz é tratada à parte, em `AYD-006`.
 - [ ] **Top categorias no tempo, fixo×variável, projeção de fluxo de caixa** — extensões
