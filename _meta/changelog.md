@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-08-21
+updated: 2026-08-24
 owner: Silvio Ubaldino
 ---
 
@@ -30,6 +30,22 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Added AYD-006 (import fallback category): uncategorized inflows from a statement import no
+  longer land in an expense category — the fallback now has an income flavor, chosen by sign
+  at write time, plus a backfill for the rows already stored. User-facing numbers change.
+- Updated AYD-003 (financial analytics): recorded the category-total divergence — the client
+  totals expenses from the KPI instead of the drawn bars, and signals categories omitted for
+  closing positive.
+- Updated AYD-003 (financial analytics): pinned the payload's reconciliation invariants —
+  expenses by category, the monthly series and the KPIs must add up to the same totals, and a
+  category whose period closes positive stays in the array.
+- Updated AYD-003 (financial analytics): the money aggregates now use AYD-005's canonical
+  realized cut — the credit card is counted once, itemized by its real categories, and
+  "Realizado" is the plain paid sum. User-facing numbers change.
+- Updated AYD-003 (financial analytics): recorded the web as implemented and restated the
+  screen as five visualizations plus KPIs in the shipped order.
+- Updated AYD-005 (planning): fixed two claims that did not match the server — a card item
+  counts in its Invoice's due-date month and is born unpaid.
 - Added AYD-005: internal transfer between wallets design, covering api, web and mobile.
 - Updated AYD-003 (financial analytics): added a Month option to the period scope toggle.
 - Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle.
