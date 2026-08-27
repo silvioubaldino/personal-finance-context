@@ -30,6 +30,9 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): the client-side actions of the 24/Aug/2026
+  divergence are done on web and mobile — positive categories no longer render as spending
+  bars and the card total comes from the expense KPI; only the api action is still open.
 - Added AYD-006 (import fallback category): uncategorized inflows from a statement import no
   longer land in an expense category — the fallback now has an income flavor, chosen by sign
   at write time, plus a backfill for the rows already stored. User-facing numbers change.
