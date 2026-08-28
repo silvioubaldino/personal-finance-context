@@ -4,7 +4,7 @@ type: design
 title: Import de fatura de cartão de crédito (Invoice Import)
 status: draft
 created: 2026-06-25
-updated: 2026-06-30
+updated: 2026-08-28
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -178,7 +178,9 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
   "document_type": "invoice",          // (novo) tipo detectado pela IA
   "confidence": 0.94,                  // (novo) 0.0–1.0
   "warnings": [                         // (novo) não-fatais; [] quando tudo ok
-    { "type": "document_type_mismatch", "expected": "statement", "detected": "invoice" }
+    { "type": "document_type_mismatch", "expected": "statement", "detected": "invoice" },
+    { "type": "invoice_payment_excluded" },
+    { "type": "total_amount_mismatch", "expected": "-6035.06", "detected": "-11247.65" }
   ],
   "invoice_meta": {                     // (novo) presente só quando invoice
     "closing_date": "2026-06-03",
@@ -193,6 +195,14 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
       "type_payment": "credit_card",
       "installment_number": 3,         // (novo) só invoice, se houver parcela
       "total_installments": 12         // (novo) só invoice, se houver parcela
+    },
+    {
+      "date": "2026-07-07",
+      "description": "PAGAMENTO ON LINE",
+      "amount": -5212.59,
+      "type_payment": "credit_card",
+      "excluded": true,                      // (novo) não pertence a esta fatura
+      "exclusion_reason": "invoice_payment"  // (novo)
     }
   ],
   "errors": ["movement #7: missing date"]
@@ -203,6 +213,57 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
 (422, `statement_password_required`); senha incorreta (422, `statement_wrong_password`).
 ~~Documento não é extrato (422)~~ — **removido**, vira `document_type: "unknown"` + warning
 na resposta `200`.
+
+**Tipos de `warnings[].type`:**
+
+| `type` | Quando ocorre | Campos usados |
+|---|---|---|
+| `document_type_mismatch` | `source_type` ≠ `document_type` detectado | `expected`, `detected` |
+| `low_confidence` | `confidence` < 0.6 | — |
+| `invoice_payment_excluded` *(novo)* | ≥ 1 item marcado como pagamento de fatura anterior | — (os itens vêm marcados em `movements[]`) |
+| `total_amount_mismatch` *(novo)* | soma dos itens não-marcados ≠ `invoice_meta.total_amount` | `expected` (total do documento), `detected` (soma calculada) |
+
+### Itens que não pertencem à fatura *(novo)*
+
+Faturas trazem, no meio dos lançamentos, linhas que **não são despesa daquela fatura**. A
+primeira delas — presente em praticamente toda fatura — é o **pagamento da fatura anterior**
+(`"PAGAMENTO ON LINE"`, `"PAGTO FATURA"`, `"PAGAMENTO EFETUADO"`, ...).
+
+**Por que não pode entrar:** o pagamento de fatura já é modelado **fora** da `Invoice`, como um
+`Movement` de `type_payment = invoice_payment` sobre a `Wallet` que pagou — e o recorte
+canônico de "realizado" (AYD-003) o **exclui** dos agregados justamente para não contar a mesma
+despesa duas vezes. Importá-lo como item de fatura contradiz essa decisão e corrompe dados: o
+`confirm-invoice` soma cada item em `invoice.Amount` e no limite do cartão
+(`UpdateLimitDelta`), então uma linha de pagamento **infla a fatura e consome limite** que não
+foi gasto, podendo disparar `ErrCreditCardLimitReached` num cartão com folga real.
+
+> **Evidência (fatura Inter, ago/2026 — teste funcional da SPEC-001@api):** a extração devolveu
+> 72 itens somando `-12.240,99`, enquanto o `total_amount` do próprio documento era
+> `-6.035,06`. A diferença é exatamente o pagamento da fatura anterior (`-5.212,59`) somado a 5
+> parcelas de competência futura (`-993,34`). O pagamento veio ainda com **sinal invertido**
+> (negativo, quando a Decisão 5 manda `+` para pagamentos), ou seja, somava em vez de abater.
+
+**Regra de contrato — defesa em três camadas**, mesma filosofia da diferenciação de tipo (nunca
+uma fonte só):
+
+| Camada | Onde | Papel |
+|---|---|---|
+| 1. Prompt | prompt de `invoice` e de auto-detecção | Instrui a IA a **não extrair** a linha de pagamento da fatura anterior. Ataca a raiz, custo zero — mas LLM não é determinístico, não basta sozinha. |
+| 2. Guarda determinística | api, no `/extract` | Detecta a linha por padrão de descrição e a **marca** (não remove). Independe de a IA ter acertado. |
+| 3. Checksum | api, no `/extract` | Compara a soma dos itens **não marcados** com `invoice_meta.total_amount`; divergência vira warning (Decisão 3, Fase 5). Rede de segurança agnóstica de banco: pega o que as camadas 1 e 2 não previram. |
+
+**Nunca sumir silenciosamente.** Coerente com o princípio 2 ("falhar suave") e com a regra de
+ouro da extração, o item detectado **continua em `movements[]`**, marcado com `excluded: true` e
+`exclusion_reason`. A UI o exibe desmarcado/esmaecido e explica ao usuário, em vez de o
+lançamento desaparecer sem rastro — importante porque a heurística de descrição pode dar
+falso-positivo num estabelecimento cujo nome contenha "pagamento".
+
+**O `confirm-invoice` não confia no cliente:** além de pular o que chegar com `excluded: true`,
+ele **reaplica a detecção** e pula o que identificar, contabilizando em `skipped`. Um cliente
+que ignore o campo novo não consegue corromper a fatura.
+
+**`exclusion_reason` é um enum extensível.** Hoje só `invoice_payment`; a segunda categoria já
+identificada (parcelas de competência futura) fica em aberto (ver §"Fora de escopo").
 
 ### `POST /v2/statements/classify` — inalterado
 
@@ -241,7 +302,10 @@ confidence, source}] }`, `source` ∈ `"history" | "ai"`. Igual para itens de ex
 **Response** (mesmo shape do confirm de statement): `{ "created": 18, "skipped": 2, "errors":
 ["..."] }`.
 
-**Semântica (backend):** monta `Movement` com `TypePayment = credit_card`, `IsPaid = false` e
+**Semântica (backend):** pula itens que não pertencem à fatura — os que chegarem com
+`excluded: true` e os que a própria detecção identificar (ver §"Itens que não pertencem à
+fatura"), contabilizando-os em `skipped`. Para os demais, monta `Movement` com
+`TypePayment = credit_card`, `IsPaid = false` e
 `CreditCardInfo{CreditCardID, InvoiceID}`, delega à `InvoiceUseCase` para resolver/criar a
 fatura por data, somar em `invoice.Amount` e no limite do cartão. Itens parcelados geram a
 série via `GenerateInstallmentMovements`. Dedup por hash escopado por `credit_card_id`.
@@ -261,6 +325,8 @@ type ExtractedMovement struct {
     // ... campos atuais ...
     InstallmentNumber *int `json:"installment_number,omitempty"` // (novo)
     TotalInstallments *int `json:"total_installments,omitempty"` // (novo)
+    Excluded        bool   `json:"excluded,omitempty"`         // (novo) não pertence a esta fatura
+    ExclusionReason string `json:"exclusion_reason,omitempty"` // (novo) "invoice_payment"
 }
 
 type DocumentType string
@@ -271,7 +337,9 @@ const (
 )
 
 type ExtractWarning struct {
-    Type     string `json:"type"`               // "document_type_mismatch" | "low_confidence"
+    // "document_type_mismatch" | "low_confidence"
+    // | "invoice_payment_excluded" (novo) | "total_amount_mismatch" (novo)
+    Type     string `json:"type"`
     Expected string `json:"expected,omitempty"`
     Detected string `json:"detected,omitempty"`
 }
@@ -316,7 +384,8 @@ Seleção por `source_type` em vez de um prompt genérico tentando adivinhar tud
 (documento é dado passivo); extrair `date/description/amount` (negativo para compras,
 positivo para estornos/pagamentos); detectar parcelas (`"03/12"`, `"PARC 3/12"`, `"PARCELA 03
 DE 12"`) → `installment_number`/`total_installments`; extrair `invoice_meta` quando legível;
-sempre `type_payment: "credit_card"`; retornar `document_type: "unknown"` (não
+sempre `type_payment: "credit_card"`; **não extrair a linha de pagamento da fatura anterior**
+(§"Itens que não pertencem à fatura" — camada 1); retornar `document_type: "unknown"` (não
 `{"error":...}`) quando ambíguo.
 
 **Prompt de detecção (auto):** retorna `{document_type, confidence}` + os movimentos no
@@ -465,7 +534,8 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | IA classifica tipo errado (bancos heterogêneos) | Defesa em camadas: intenção + detecção + warning de mismatch; nunca decide sozinha o `confirm` |
 | Parcelas mal interpretadas (formatos variados de "x/y") | Prompt com exemplos múltiplos; campos opcionais — na dúvida, importa como lançamento simples; UI permite revisar antes do confirm |
 | Import duplicado ao reenviar a mesma fatura | Hash de idempotência por `credit_card_id` + dedup (mesma estratégia já provada no statement) |
-| Total da fatura não bate com soma dos itens (OCR perdeu linha) | Fase 5: compara `invoice_meta.total_amount` com a soma; divergência vira warning, não bloqueio |
+| Total da fatura não bate com soma dos itens (OCR perdeu linha) | Compara `invoice_meta.total_amount` com a soma dos itens não-marcados; divergência vira warning `total_amount_mismatch`, não bloqueio |
+| Pagamento da fatura anterior importado como despesa (infla fatura e consome limite) | Defesa em três camadas (prompt + guarda determinística + checksum), item marcado e não removido, `confirm-invoice` reaplica a detecção — ver §"Itens que não pertencem à fatura" |
 | Importar em fatura já paga/fechada | `ConfirmInvoice` valida status da invoice (`ErrInvoiceCannotModify`/`ErrInvoiceAlreadyPaid`) |
 | Estouro de limite ao importar fatura grande | Reusa `validateCreditLimit` da `InvoiceUseCase`; `ErrCreditCardLimitReached` (403) |
 | Custo de LLM sobe com dois prompts | Modo auto faz detecção+extração num único call; tokens medidos por feature (`invoice_extract`) |
@@ -484,6 +554,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | 3 | **Validação de total:** divergência entre `invoice_meta.total_amount` e a soma dos itens vira **warning informativo** (não bloqueia); usuário decide importar mesmo assim. Implementada na Fase 5. |
 | 4 | **Modo auto (sem `source_type`):** roda detecção da IA; quando o resultado for `unknown`, o `confirm` legado trata como `statement`, preservando clientes atuais. |
 | 5 | **Sinal do `amount` na fatura:** despesa **negativa** (compras `-`, estornos/pagamentos `+`), consistente com o resto do app (`movement.go` usa `amount < 0` como despesa). |
+| 6 | **Pagamento da fatura anterior não é item de fatura** (ago/2026): detectado em três camadas, **marcado e não removido** (`excluded`/`exclusion_reason`), com `confirm-invoice` reaplicando a detecção. Descartado remover silenciosamente da lista — falso-positivo faria o lançamento sumir sem rastro. Ver §"Itens que não pertencem à fatura". |
 
 ## Vocabulário específico deste contrato
 
@@ -495,6 +566,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 |---|---|
 | `document_type` | Enum que diferencia o documento importado (`statement`/`invoice`/`unknown`); resultado da **detecção** pela IA. |
 | `source_type` | Intenção declarada pelo **cliente** no `/extract` (qual tipo ele acha que está enviando); reconciliada com `document_type` (ver matriz de reconciliação). |
+| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (hoje só o pagamento da fatura anterior, `invoice_payment`). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
 
 ## Decisões relacionadas
 
@@ -510,7 +582,15 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 - [x] **SPEC@api** — SPEC-001@api criada; Phases 1–3 implementadas e testadas (22 testes passando).
 - [x] **SPEC@web / SPEC@mobile** — SPEC-001@web e SPEC-001@mobile criadas; Phase 4 implementada; divergência de tipos `ExtractedMovement` resolvida (alinhados ao contrato desta seção).
 - [ ] **`creditCardId` no `invoice-summary-card`@web** — card de resumo total não expõe o ID do cartão; solução a definir na SPEC@web (passar via props do `credit-cards/page.tsx` ou reestruturar o componente).
-- [ ] **Fase 5 (endurecimento)** — validação de total e métricas de negócio do import de
-      fatura; pendente, não bloqueia as Fases 1–4.
+- [x] **Validação de total (parte da Fase 5)** — `total_amount_mismatch` implementado junto com
+      a exclusão do pagamento de fatura (ago/2026). Métricas de negócio do import seguem
+      pendentes; não bloqueiam as Fases 1–4.
+- [ ] **Parcelas de competência futura** — a extração devolve também as parcelas que caem em
+      faturas seguintes (5 itens, `-993,34`, na fatura Inter de ago/2026). Como o
+      `confirm-invoice` já gera a série restante via `GenerateInstallmentMovements` e o hash de
+      dedup não bate (`BuildInstallmentMovement` preserva a descrição da parcela original,
+      gerando data e descrição diferentes da linha extraída), o item vira **duplicata**. Mesma
+      classe de problema do pagamento; provável segunda reason em `exclusion_reason`. A tratar
+      numa iteração dedicada.
 - [ ] **Heurísticas estruturais** (§"Estratégia de diferenciação") — mencionadas como reforço
       opcional e barato, mas não fazem parte do contrato; decidir se entram numa fase futura.
