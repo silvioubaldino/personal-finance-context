@@ -400,6 +400,30 @@ desejado, não lacuna.
 exista, não pertença ao usuário ou não seja do `credit_card_id` informado é rejeitado, e o item
 cai no caminho normal de criação.
 
+### Atomicidade da persistência *(novo)*
+
+Gravar um item de fatura são três escritas: o `Movement`, o total da `Invoice`
+(`invoice.Amount`) e o limite do cartão (`UpdateLimitDelta`). Até ago/2026 as três rodavam
+soltas — cada uma abrindo a própria transação — e as duas últimas ainda **descartavam o erro**
+(`_, _ =`). Uma falha em qualquer ponto deixava fatura e limite dessincronizados dos
+movimentos, sem sinal nenhum na resposta.
+
+**Regra:** as três escritas de um item acontecem numa transação só. Para um item parcelado, a
+unidade é a **série inteira** — uma série pela metade (parcelas 1..6 gravadas, 7..12 não)
+infla a fatura sem representar a compra, e é pior que nenhuma.
+
+A resolução da fatura (`FindOrCreateInvoiceForMovement`) fica **fora** da transação de
+propósito: ela abre a própria transação ao criar uma fatura, e chamá-la lá dentro abriria uma
+transação paralela, que commitaria por fora de um eventual rollback. Fatura criada sem itens é
+inofensiva e reaproveitável na próxima tentativa.
+
+A granularidade continua sendo **por item**, não por requisição: `confirm-invoice` devolve
+`created`/`skipped`/`errors` e o sucesso parcial é comportamento desejado — um item problemático
+não derruba a importação inteira.
+
+> Consequência para a Fase 6: a atualização de valor do vínculo entra na mesma transação do
+> ajuste de delta na fatura e no limite, sem herdar a fragilidade antiga.
+
 ### `POST /v2/statements/classify` — inalterado
 
 `{ "movements": [...] }` → `{ "suggestions": [{description, category_id, subcategory_id,
@@ -768,15 +792,14 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
       `exclusion_reason: "future_installment"` por regra de período; série existente vira
       vínculo com atualização de valor e skip da série. **Implementação pendente** — Fase 6,
       nos três repos.
-- [ ] **Índices ausentes em `movements`** — a migration `019` nunca criou o
-      `idx_movements_idempotency_hash` que o próprio `down` tenta dropar, e
-      `installment_group_id` (migration `009`) também está sem índice. `FindExistingHashes` já
-      faz scan por usuário; o matcher da Fase 6 aumenta a frequência de acesso. Não bloqueia,
-      mas deve entrar junto com ela.
-- [ ] **`confirm-invoice` sem transação por item** — `Add` + `UpdateAmount` +
-      `UpdateLimitDelta` rodam soltos, e os dois últimos ignoram o erro (`_, _ =`).
-      Fragilidade pré-existente que o caminho de vínculo herda: uma atualização de valor sem o
-      ajuste de delta correspondente deixa a fatura inconsistente. Tratar num endurecimento
-      dedicado.
+- [x] **Índices ausentes em `movements`** — resolvido em ago/2026 (migration `027`@api):
+      `idx_movements_idempotency_hash` sobre `(user_id, idempotency_hash)` e
+      `idx_movements_installment_group` sobre `(installment_group_id, installment_number)`,
+      ambos parciais (`WHERE ... IS NOT NULL`). A `019` criava a coluna do hash e o seu
+      `down` já dropava um índice que o `up` nunca chegou a criar.
+- [x] **`confirm-invoice` sem transação por item** — resolvido em ago/2026 (`api`): gravação
+      do movimento, atualização do total da fatura e ajuste do limite do cartão passam a rodar
+      numa transação única por item, e a série de parcelas numa transação única por série
+      (ver §"Atomicidade da persistência").
 - [ ] **Heurísticas estruturais** (§"Estratégia de diferenciação") — mencionadas como reforço
       opcional e barato, mas não fazem parte do contrato; decidir se entram numa fase futura.
