@@ -4,12 +4,12 @@ type: design
 title: Monitoramento e observabilidade (logs, métricas e KPIs de negócio)
 status: draft
 created: 2026-06-25
-updated: 2026-06-25
+updated: 2026-09-12
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
 children: []
-related: [ARCH, GLO]
+related: [ARCH, GLO, AYD-004]
 tags: [observability]
 superseded_by: null
 ---

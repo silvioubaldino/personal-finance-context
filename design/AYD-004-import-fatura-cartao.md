@@ -4,7 +4,7 @@ type: design
 title: Import de fatura de cartão de crédito (Invoice Import)
 status: draft
 created: 2026-06-25
-updated: 2026-08-28
+updated: 2026-09-12
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
@@ -172,6 +172,17 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
 | `file` | binário | sim | PDF, JPEG ou PNG. Máx 10 MB. |
 | `password` | string | não | Senha de abertura para PDF protegido. |
 | `source_type` *(novo)* | string | não | `statement` \| `invoice`. **Ausente = modo auto** (IA decide). Retrocompatível. |
+| `credit_card_id` *(novo)* | string (uuid) | não | Cartão de destino, quando a UI já conhece o contexto (fluxo aberto a partir de um cartão). Habilita os enriquecimentos de servidor da Fase 6. |
+
+> **Por que `credit_card_id` no `/extract`.** Os dois enriquecimentos da Fase 6 são
+> impossíveis sem o cartão: a regra de competência futura compara a data do item com
+> `invoice.PeriodEnd`, derivado do dia de fechamento **daquele** cartão, e o matcher de série
+> busca parcelas já registradas escopadas por `credit_card_id` + `total_installments`. É
+> **opcional** e o pipeline degrada em camadas, coerente com o princípio 2 ("falhar suave"):
+> sem ele a extração funciona igual, apenas sem `installment_match` e sem marcar
+> `future_installment` — e o `confirm-invoice`, que sempre recebe o `credit_card_id`, reaplica
+> as duas regras defensivamente (§"Semântica do vínculo"), então nenhum dado é corrompido por
+> um cliente que o omita. Mantém a retrocompatibilidade total da Fase 1.
 
 **Response `200`** (campos novos são aditivos):
 
@@ -782,7 +793,13 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 ## Fora de escopo / questões em aberto
 
 - [x] **SPEC@api** — SPEC-001@api criada; Phases 1–3 implementadas e testadas (22 testes passando).
-- [x] **SPEC@web / SPEC@mobile** — SPEC-001@web e SPEC-001@mobile criadas; Phase 4 implementada; divergência de tipos `ExtractedMovement` resolvida (alinhados ao contrato desta seção).
+- [x] **SPEC@web / SPEC@mobile** — SPEC-001@web e SPEC-001@mobile criadas; Phase 4 implementada.
+- [ ] **Divergência de tipos `ExtractedMovement` entre web e mobile** — **NÃO resolvida**, ao
+      contrário do que este item afirmava até set/2026. Cada cliente carrega campos locais
+      próprios (web: `recurrentMatch`, `confidence`, `classificationSource`; mobile:
+      `recurrence_id`, `recurrence_title`) e nenhum dos dois é 1:1 com o
+      `domain.ExtractedMovement`@api. A SPEC-001@web sempre registrou isso como questão em
+      aberto — era o AYD e o changelog@context que divergiam dela.
 - [ ] **`creditCardId` no `invoice-summary-card`@web** — card de resumo total não expõe o ID do cartão; solução a definir na SPEC@web (passar via props do `credit-cards/page.tsx` ou reestruturar o componente).
 - [x] **Validação de total (parte da Fase 5)** — `total_amount_mismatch` implementado junto com
       a exclusão do pagamento de fatura (ago/2026). Métricas de negócio do import seguem
@@ -801,5 +818,36 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
       do movimento, atualização do total da fatura e ajuste do limite do cartão passam a rodar
       numa transação única por item, e a série de parcelas numa transação única por série
       (ver §"Atomicidade da persistência").
+### Achados de set/2026 — levantados na revisão de código, ainda sem decisão
+
+> Mapeados lendo o código das Fases 1–5, **não cobertos por nenhuma decisão deste AYD**.
+> Registrados aqui para não se perderem; cada um precisa virar decisão antes de virar código.
+
+- [ ] **Estorno positivo é classificado como receita.** `resolveCategoryID`@api escolhe a
+      categoria pelo sinal (`amount > 0` ⇒ *Uncategorized Income*). Um estorno de cartão é
+      **redução de despesa**, não entrada — classificá-lo como receita distorce os agregados
+      do AYD-003. A Decisão 5 fixou o **sinal** dos estornos, mas não a **categorização**.
+- [ ] **Limites de plano não se aplicam ao import de fatura.** `ConfirmInvoice` não chama
+      `limitsValidator.ValidateMovementCreation`, que o `Confirm` do caminho statement chama:
+      um usuário `free` fura o teto mensal de `Movement` importando fatura. Decidir se o teto
+      vale por item importado, por import, ou não vale para import.
+- [ ] **`invoice_id` como override derrota a resolução por data.**
+      `FindOrCreateInvoiceForMovement` retorna a fatura do override **antes** de olhar a data
+      do item, e o mobile sempre envia `invoice_id` (a fatura aberta na tela). Todo item não
+      parcelado cai naquela fatura, mesmo datado fora do período dela. A Decisão 2 previu o
+      override como conveniência, sem definir se ele vale para o request inteiro ou só como
+      fallback quando a data não resolve. A regra de competência futura (Fase 6) mitiga o caso
+      para frente, não para trás.
+- [ ] **Fatura já paga derruba o import no meio.** `ConfirmInvoice` retorna
+      `ErrInvoiceAlreadyPaid` ao encontrar a primeira fatura paga — com N itens já
+      persistidos e sem rollback. Contradiz a §"Atomicidade da persistência", que declara o
+      sucesso parcial por item como comportamento desejado. Decidir qual regra vence.
+- [ ] **Reimport de correção não especificado.** Reenviar a mesma fatura depois de o OCR ter
+      perdido linhas: o dedup por hash pula as já importadas e cria só as que faltavam.
+      Funciona na prática, mas não está no contrato nem coberto por teste.
+- [ ] **Interação entre fatura importada e o pagamento dela (AYD-003).** Quando o usuário
+      paga uma fatura cujos itens vieram de import, falta descrever como o `Movement` de
+      `invoice_payment` se relaciona com esses itens no recorte canônico de "realizado".
+
 - [ ] **Heurísticas estruturais** (§"Estratégia de diferenciação") — mencionadas como reforço
       opcional e barato, mas não fazem parte do contrato; decidir se entram numa fase futura.

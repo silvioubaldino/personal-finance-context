@@ -14,7 +14,7 @@ owner: Silvio Ubaldino
 ## Estado do produto
 - **Produto:** Personal Finance
 - **Repos:** context (este) · api (`personal-finance`) · web (`personal-finance-frontend-v2`) · mobile (`personal-finance-mobile`)
-- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento, AYD-003 análises financeiras e AYD-004 import de fatura de cartão (todos em design, ainda sem SPEC); ROAD e ADRs ainda pendentes)
+- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento e AYD-003 análises financeiras em design sem SPEC; AYD-004 import de fatura de cartão com SPEC-001 nos três repos de serviço, em implementação; ROAD e ADRs ainda pendentes)
 
 ## Grafo de documentos
 | Camada | ID | Documento | Status | Refina | Detalhado por |
@@ -44,7 +44,9 @@ PROD-001
    │                               └─ SPEC-001@mobile ─ PLAN-001@mobile
    │          ├ AYD-002 (monitoramento, real) ─ (sem SPEC ainda)
    │          ├ AYD-003 (análises financeiras, real, em design) ─ (sem SPEC ainda)
-   │          └ AYD-004 (import de fatura de cartão, real, em design) ─ (sem SPEC ainda)
+   │          └ AYD-004 (import de fatura de cartão, real) ─┬─ SPEC-001@api
+                                                            ├─ SPEC-001@web
+                                                            └─ SPEC-001@mobile
    └─ ROAD-001
 (PDR / ADR / ARCH / GLO referenciados transversalmente por todos)
  ARCH = topologia vigente (C4 vivo); atualizado quando entra/sai serviço ou integração.
