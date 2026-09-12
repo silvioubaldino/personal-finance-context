@@ -272,7 +272,7 @@ canônico de "realizado" (AYD-003) o **exclui** dos agregados justamente para n�
 despesa duas vezes. Importá-lo como item de fatura contradiz essa decisão e corrompe dados: o
 `confirm-invoice` soma cada item em `invoice.Amount` e no limite do cartão
 (`UpdateLimitDelta`), então uma linha de pagamento **infla a fatura e consome limite** que não
-foi gasto, podendo disparar `ErrCreditCardLimitReached` num cartão com folga real.
+foi gasto, podendo disparar `ErrInsufficientCreditLimit` num cartão com folga real.
 
 > **Evidência (fatura Inter, ago/2026 — teste funcional da SPEC-001@api):** a extração devolveu
 > 72 itens somando `-12.240,99`, enquanto o `total_amount` do próprio documento era
@@ -334,7 +334,7 @@ quase-mecanismos, e entender por que nenhum serve determina o desenho:
 
 **Severidade de um match perdido:** o `confirm-invoice` soma cada item em `invoice.Amount` e no
 limite do cartão. Uma série não reconhecida não duplica *um* lançamento — duplica *N*, infla a
-fatura e consome limite real, podendo disparar `ErrCreditCardLimitReached` num cartão com folga.
+fatura e consome limite real, podendo disparar `ErrInsufficientCreditLimit` num cartão com folga.
 
 #### Três casos, tratamentos diferentes
 
@@ -488,8 +488,8 @@ inválido (grupo inexistente, de outro usuário ou de outro cartão) é rejeitad
 caminho normal de criação.
 
 **Erros adicionais:** `credit_card_id` ausente/inexistente (400/404); cartão sem carteira
-default e item sem wallet (400, `ErrCreditCardNoDefaultWallet`); estouro de limite (403,
-`ErrCreditCardLimitReached`); fatura alvo já paga (422).
+default e item sem wallet (400, `ErrCreditCardNoDefaultWallet`); estouro de limite do cartão (403,
+`ErrInsufficientCreditLimit`); fatura alvo já paga (422).
 
 **Contrato de erro global** (inalterado): `{ "error": { "code": 422, "message": "...", "type":
 "opcional" } }`. Clientes ramificam por `error.type` quando presente.
@@ -747,7 +747,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | Match de parcela vincula à compra errada (falso-positivo) | Assinatura apertada (cartão + `total_installments` + valor com tolerância + raiz da descrição); só confiança alta vem pré-vinculada, média vira sugestão; a UI mostra a qual compra está vinculando e permite desvincular antes do confirm |
 | Match perdido duplica a série inteira (infla fatura e consome limite) | Regra de competência futura resolve o caso mais comum sem matching; checksum de total (`total_amount_mismatch`) pega o resíduo; `skipped` contabiliza a série inteira |
 | Importar em fatura já paga/fechada | `ConfirmInvoice` valida status da invoice (`ErrInvoiceCannotModify`/`ErrInvoiceAlreadyPaid`) |
-| Estouro de limite ao importar fatura grande | Reusa `validateCreditLimit` da `InvoiceUseCase`; `ErrCreditCardLimitReached` (403) |
+| Estouro de limite ao importar fatura grande | Reusa a regra de `domain.CreditCard.HasSufficientLimit`, a mesma do lançamento manual (`Movement.validateCreditLimit`); `ErrInsufficientCreditLimit` (403). **Não** é `ErrCreditCardLimitReached` — esse identificador já existe no código com outro significado (teto de cartões do **plano**), e reusá-lo mostraria mensagem de quota num estouro de limite do cartão (corrigido em set/2026) |
 | Custo de LLM sobe com dois prompts | Modo auto faz detecção+extração num único call; tokens medidos por feature (`invoice_extract`) |
 | Frontends antigos quebrarem | Tudo aditivo; ausência de `source_type` = comportamento atual (statement) |
 | Tipos `ExtractedMovement` já divergentes entre web/mobile (ver §"Implementação por repo") | Alinhar os três ao contrato desta seção na SPEC@web/SPEC@mobile, antes de empilhar campos novos |
@@ -765,7 +765,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | 4 | **Modo auto (sem `source_type`):** roda detecção da IA; quando o resultado for `unknown`, o `confirm` legado trata como `statement`, preservando clientes atuais. |
 | 5 | **Sinal do `amount` na fatura:** despesa **negativa** (compras `-`, estornos/pagamentos `+`), consistente com o resto do app (`movement.go` usa `amount < 0` como despesa). |
 | 6 | **Pagamento da fatura anterior não é item de fatura** (ago/2026): detectado em três camadas, **marcado e não removido** (`excluded`/`exclusion_reason`), com `confirm-invoice` reaplicando a detecção. Descartado remover silenciosamente da lista — falso-positivo faria o lançamento sumir sem rastro. Ver §"Itens que não pertencem à fatura". |
-| 7 | **Parcelas de competência futura não são itens desta fatura** (ago/2026): resolvidas por **período da fatura** (`date > invoice.PeriodEnd`, já derivado do dia de fechamento do cartão), não por matching — `excluded` + `exclusion_reason: "future_installment"`. Mesmo tratamento do pagamento: marca, não remove. |
+| 7 | **Parcelas de competência futura não são itens desta fatura** (ago/2026): resolvidas por **período da fatura** (`date > invoice.PeriodEnd`, já derivado do dia de fechamento do cartão), não por matching — `excluded` + `exclusion_reason: "future_installment"`. Mesmo tratamento do pagamento: marca, não remove. **Vale só para itens PARCELADOS** (com `installment_number` + `total_installments`) — esclarecido em set/2026: uma compra comum datada depois do fechamento pertence à fatura seguinte e é parenteada corretamente pela resolução por data da Decisão 2 ("cobre faturas que cruzam o fechamento"); marcá-la a faria sumir do import. |
 | 8 | **Vínculo de parcela já registrada** (ago/2026): quando o item extraído corresponde a uma série existente, o `confirm-invoice` **atualiza o valor** da parcela daquela competência — parcelamentos variam centavos entre parcelas e a fatura é a fonte de verdade — e **pula a série inteira**, sem criar nada. Não altera `description`, `date` nem `is_paid`. Confiança alta vem pré-vinculada; média vira sugestão; a UI nunca bloqueia com modal por item. Ver §"Parcelas já registradas no app". |
 
 ## Vocabulário específico deste contrato
