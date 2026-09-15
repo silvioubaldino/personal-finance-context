@@ -3,7 +3,7 @@ id: META-changelog
 type: meta
 title: Changelog do repo de contexto
 status: approved
-updated: 2026-08-24
+updated: 2026-09-15
 owner: Silvio Ubaldino
 ---
 
@@ -30,6 +30,7 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+- Updated AYD-003 (financial analytics): the weekday bar chart gives way to a daily spending heat map over the period's calendar, switchable between amount and movement count, keeping the weekday reading as its column totals.
 - Updated AYD-003 (financial analytics): the client-side actions of the 24/Aug/2026
   divergence are done on web and mobile — positive categories no longer render as spending
   bars and the card total comes from the expense KPI; only the api action is still open.
