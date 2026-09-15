@@ -364,6 +364,13 @@ escopo — quantidade de dias sem gasto, concentração dos dias mais caros ("se
 caros somam 62% do mês"), peso da primeira semana, maior sequência sem gastar e, no escopo
 Ano, a faixa de dias do mês que concentra o gasto.
 
+**Persistência do modo.** A escolha Valor/Quantidade é lembrada **localmente, por
+dispositivo** (cookie no web, storage de preferências local no mobile) — não viaja para
+`/v2/preferences`, que hoje guarda só `language` e `currency`. Estender aquele contrato por
+causa de uma chave de gráfico é escopo que esta feature não pede, e o custo de não sincronizar
+entre dispositivos é o usuário reescolher o modo uma vez em cada um. Se algum dia valer
+sincronizar, é uma edição naquele contrato, não neste.
+
 **Total no cabeçalho.** O card **não** exibe um total que compita com o `kpis.total_expense`
 da mesma tela; se exibir, rotula "por data da compra". Os dois recortes divergem de propósito
 (§ Invariantes de conciliação), e um número grande divergindo do KPI em silêncio é exatamente
