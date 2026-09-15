@@ -16,22 +16,15 @@ superseded_by: null
 
 # AYD-003: Análises financeiras (visão ao longo do tempo)
 
-> **Nota de status (22/ago/2026):** os **três** repos implementam a feature. api e mobile
+> **Nota de status:** os **três** repos implementam a feature. api e mobile
 > entregaram em `personal-finance#212` / `personal-finance-mobile#35`
 > (`SPEC-002@api`, `SPEC-002@mobile`); o **web** ganhou `SPEC-002@web` e a página `/analises`
 > na branch `claude/spec-ayd-analise-web-22qtwa`@web — implementada com paridade de
 > visualizações e ordem com o mobile, **ainda não mergeada em `develop`**.
 >
-> **Recorte unificado (22/ago/2026):** os agregados de dinheiro passaram a ler o recorte
-> canônico de `AYD-005` — uma implementação de servidor só, no lugar dos três recortes que
-> conviviam na mesma resposta. Muda números que o usuário já via; ver
+> **Recorte unificado:** os agregados de dinheiro leem o recorte canônico de `AYD-005`, numa
+> implementação de servidor só; ver
 > [§ Recorte de "realizado"](#recorte-de-realizado).
->
-> **Divergência de 24/ago/2026:** com o recorte já unificado, o web ainda mostrava
-> `kpis.total_expense` e a soma de `expense_by_category` divergindo em R$ 5.300,90. São três
-> defeitos empilhados — um de renderização no cliente, um de contrato (o invariante não é
-> renderizável) e a causa raiz nos dados, que virou `AYD-006`. Ver
-> [§ Divergência de 24/ago/2026](#divergência-de-24ago2026--categoria-positiva-na-tela).
 
 ## Objetivo
 
@@ -226,6 +219,16 @@ fechar — omiti-la quebraria o primeiro invariante. Quem desenha barras deve fi
 `total < 0` **antes** de tirar o módulo; aplicar `Math.abs` primeiro transforma o estorno numa
 barra de gasto e infla o total da tela.
 
+O invariante vale no **payload** e não tem como valer na **tela**: a categoria positiva
+simplesmente não tem barra de despesa a desenhar. Por isso o total no cabeçalho do card de
+categorias sai de `kpis.total_expense`, **nunca** da soma das barras visíveis, e quando as
+duas coisas não fecham o cliente **sinaliza a diferença** (categorias omitidas por terem
+fechado positivas) em vez de escondê-la. O `hiddenCount` do agrupamento "outras" não cobre
+este caso.
+
+Categoria de despesa fechando positiva por dado ruim — e não por estorno legítimo — é a
+categoria de fallback do import, tratada em `AYD-006@context`.
+
 **A não-duplicação é garantia do recorte, não da query.** Um `Movement` que pertence a uma
 `Invoice` é recusado na lista avulsa porque entra pelos itens dela. Antes, o que segurava o
 double-count era um `type_payment NOT IN (credit_card, invoice_remainder)` dentro de
@@ -235,117 +238,6 @@ mar/2026), herdado sem intenção e sem registro em documento nenhum.
 **Impacto para o usuário:** os números mudam. Quem usa cartão passa a ver a despesa
 itemizada nas categorias reais em vez de um bloco "Cartão de crédito", e o "Realizado" do
 orçamento deixa de ser inflado pelo piso do orçado. Vale nota de release.
-
-<details>
-<summary><strong>Histórico — os três recortes que conviviam até 22/ago/2026</strong></summary>
-
-| Bloco do payload | `internal_transfer` | `invoice_payment` | compra no `credit_card` | `invoice_remainder` |
-|---|---|---|---|---|
-| `monthly_series` · `kpis` | fora | **dentro** | fora (SQL) | fora (SQL) |
-| `current_month.budget.realized` | fora | **dentro** | fora (SQL) | fora (SQL) |
-| `expense_by_category` | fora | fora | fora (SQL) | fora (SQL) |
-| `expense_weekday_distribution` | fora | **dentro** | fora (SQL) | fora (SQL) |
-
-O que isso causava:
-
-1. `sum(expense_by_category) ≠ kpis.total_expense` — a diferença era o total das faturas
-   pagas no período. Para quem usa cartão, **a despesa do cartão não aparecia no gráfico de
-   categorias**.
-2. `current_month.budget.realized ≠ realized_paid` — Análises somava o `invoice_payment` na
-   `Category` genérica "Cartão de crédito" e ainda aplicava o teto/piso do `Balance`. A mesma
-   linha "Orçado × Realizado" mostrava valores diferentes em Análises e em Planejamentos.
-3. `expense_weekday_distribution` contradizia a decisão #7: contava uma linha de
-   `invoice_payment` por fatura, no dia do vencimento, no lugar das compras. Media vencimento
-   de fatura, não comportamento de compra.
-4. Duplicação latente: `credit_card` e `invoice_payment` coexistem no banco, os dois
-   `is_paid = true` depois que a fatura é paga. Só o filtro de SQL impedia o double-count — e
-   `dashboard_usecase_test.go`@api chegava a fixá-lo como esperado (`kpis.total_expense =
-   −700` para um gasto real de −350), com um mock que devolvia linhas que o repositório real
-   nunca devolve.
-
-</details>
-
-### Divergência de 24/ago/2026 — categoria positiva na tela
-
-Com o recorte já unificado, o web ainda mostrava dois totais diferentes para a mesma coisa,
-no escopo "Ano":
-
-| Onde | Valor |
-|---|---|
-| KPI "Despesa total (ano)" (`kpis.total_expense`) | **−79.947,06** |
-| Card "Despesas por categoria (ano)" (soma das barras) | **85.247,96** |
-
-A investigação reproduziu os dois números em SQL, a partir da base de dinheiro descrita
-acima. Não é aproximação, é identidade — e são **três defeitos empilhados**, não um.
-
-#### 1. O cliente aplica `Math.abs` antes de filtrar
-
-`buildCategoryRanking` (`lib/charts/category-ranking.ts`@web) faz `Math.abs(point.total)` no
-`.map` e só depois `.filter(total > 0)` — que, nessa ordem, descarta apenas zeros, que a api
-nem manda. É exatamente o que § Invariantes de conciliação proíbe.
-
-Uma `Category` fechou o ano em **+2.650,45**. Somada com o sinal trocado, ela responde por
-`2 × 2.650,45 = 5.300,90` — a divergência inteira:
-
-```
-79.947,06 + 5.300,90 = 85.247,96
-```
-
-**O servidor está correto:** todos os invariantes do contrato fecham no payload. O defeito é
-de renderização, e vale conferir o mobile, que declara paridade de visualizações.
-
-#### 2. O invariante não é renderizável (defeito de contrato, não de código)
-
-Corrigir a ordem no cliente **não fecha a conta**. Com o filtro certo, o card mostraria
-82.597,51 contra um KPI de 79.947,06 — ainda 2.650,45 de diferença, porque a categoria
-positiva simplesmente desaparece da tela: não há barra de despesa negativa a desenhar.
-
-Ou seja: `sum(expense_by_category[].total) == kpis.total_expense` vale no **payload** e não
-tem como valer na **tela** enquanto existir categoria positiva. O contrato pedia ao cliente
-uma igualdade que ele não pode honrar.
-
-**Decisão:** o total exibido no cabeçalho do card de categorias sai de `kpis.total_expense`,
-**não** da soma das barras visíveis. As barras continuam sendo só as categorias negativas, em
-módulo. Quando a soma das barras não fecha com o cabeçalho, o cliente sinaliza a diferença
-(categorias omitidas por terem fechado positivas) em vez de escondê-la — é a única leitura
-honesta, e evita que o cabeçalho minta em silêncio. O `hiddenCount` que o web já tem serve ao
-agrupamento "outras" (limite de 6 linhas) e **não** cobre este caso.
-
-#### 3. Causa raiz: a categoria positiva não deveria existir — ver `AYD-006`
-
-A categoria de +2.650,45 é "Sem categoria", o fallback do import de `Statement`, que tem
-`is_income = false` fixo. Ela acumulou 14 entradas não categorizadas vindas de extrato
-(+5.530,00), que passaram a **abater despesa**. Não era estorno: era receita classificada
-como despesa.
-
-Isso é contrato de import, não de Análises, e está registrado em `AYD-006@context`
-(categoria de fallback em duas flavors + backfill).
-
-**Consequência incômoda: hoje nenhum dos dois números da tela está certo.** Com o backfill do
-`AYD-006`, a despesa correta do ano medido é **−85.477,06**. O KPI (−79.947,06) subestimava
-a despesa em exatamente os 5.530,00 de entradas; o card (85.247,96) errava por outro caminho
-e caía a 229,10 do valor certo **por coincidência**. Corrigido o dado, nenhuma categoria fica
-positiva e os dois números coincidem em 85.477,06 — sem depender da decisão do item 2, que
-segue valendo para o caso legítimo (estorno real maior que o gasto).
-
-#### Ações
-
-| # | Repo | Ação | Depende de |
-|---|---|---|---|
-| 1 | web | Filtrar `total < 0` **antes** do `Math.abs` em `buildCategoryRanking` — **feito** (25/ago/2026) | — |
-| 2 | web | Cabeçalho do card lê `kpis.total_expense`; sinalizar categorias omitidas — **feito** (25/ago/2026) | 1 |
-| 3 | mobile | Auditar o mesmo ponto (paridade declarada) e aplicar 1 e 2 — **feito** (25/ago/2026): a auditoria confirmou o mesmo defeito, corrigido do mesmo jeito | — |
-| 4 | api | Categoria de fallback em duas flavors + backfill | `AYD-006` |
-| 5 | api | `buildExpenseWeekdayDistribution` classifica por **sinal**, não por `is_income` — **absorvido** pelo mapa de calor: a função sai e o bloco novo já nasce classificando por `is_income` (decisão #7) | — |
-
-A ação 5 é achado lateral desta investigação: `dashboard_usecase.go`@api pula
-`Amount >= 0` em vez de consultar `is_income`, contra a regra geral do recorte. Efeito real
-medido: um `Movement` de −713,24 numa `Category` de receita conta como despesa na
-distribuição por dia da semana. Não afeta nenhum agregado de dinheiro — a distribuição conta
-quantidade e já está fora dos invariantes —, mas é inconsistência com a regra declarada. A
-correção deixou de ser uma edição naquela função: `buildExpenseWeekdayDistribution` é
-substituída por `buildExpenseDailyDistribution`, que classifica por `is_income` desde a
-primeira versão; enquanto o campo deprecado existir, ele é derivado desse bloco já correto.
 
 ### Removido do payload
 
@@ -475,7 +367,7 @@ Ano, a faixa de dias do mês que concentra o gasto.
 **Total no cabeçalho.** O card **não** exibe um total que compita com o `kpis.total_expense`
 da mesma tela; se exibir, rotula "por data da compra". Os dois recortes divergem de propósito
 (§ Invariantes de conciliação), e um número grande divergindo do KPI em silêncio é exatamente
-o defeito de 24/ago/2026 outra vez.
+um número grande divergindo do KPI em silêncio já foi defeito uma vez.
 
 ## Decisões de design
 
@@ -487,7 +379,7 @@ o defeito de 24/ago/2026 outra vez.
 | 4 | Web ganharia item de sidebar de primeiro nível | Sem a restrição de espaço do mobile |
 | 5 | Realizado do orçamento filtrado ao mês de `to` | Período é multi-mês (≠ `Balance`); evita somar o período inteiro |
 | 6 | Cada cliente usa sua lib de gráfico já existente (mobile: svg+d3-scale; web: recharts) | O contrato é o mesmo; a renderização não precisa ser |
-| 7 | O **mapa de calor diário** conta **todas** as despesas do período (pagas **e** pendentes), pelo **dia da própria compra**, excluindo `internal_transfer` e `invoice_remainder`; receita × despesa sai de `is_income`, nunca do sinal | Mede **comportamento de compra**, não caixa realizado. Compra no cartão fica `is_paid: false` até a `Invoice` ser paga — filtrar por pago apagaria justamente as compras de cartão, e atribuí-las ao `due_date` jogaria a fatura inteira numa célula só, apagando o comportamento que o gráfico mede. `InternalTransfer` é movimento entre `Wallet`s do próprio usuário, não compra (ver GLO); `invoice_remainder` é saldo empurrado para a fatura seguinte, com data igual ao vencimento anterior + 1 dia. A classificação por `is_income` alinha o bloco à regra geral do recorte e resolve a ação 5 da divergência de 24/ago/2026 — ver § Recorte de "realizado" |
+| 7 | O **mapa de calor diário** conta **todas** as despesas do período (pagas **e** pendentes), pelo **dia da própria compra**, excluindo `internal_transfer` e `invoice_remainder`; receita × despesa sai de `is_income`, nunca do sinal | Mede **comportamento de compra**, não caixa realizado. Compra no cartão fica `is_paid: false` até a `Invoice` ser paga — filtrar por pago apagaria justamente as compras de cartão, e atribuí-las ao `due_date` jogaria a fatura inteira numa célula só, apagando o comportamento que o gráfico mede. `InternalTransfer` é movimento entre `Wallet`s do próprio usuário, não compra (ver GLO); `invoice_remainder` é saldo empurrado para a fatura seguinte, com data igual ao vencimento anterior + 1 dia. A classificação por `is_income` alinha o bloco à regra geral do recorte e corrige a classificação por sinal que a função antiga fazia — ver § Recorte de "realizado" |
 | 8 | `Invoice` entra no mês do seu `due_date` | É a convenção que a api já usa (`InvoiceRepository.FindByMonth` filtra por `due_date`); "fatura de agosto" = a que vence em agosto |
 | 9 | Eixo Y rotulado em R$ nos gráficos de dinheiro | Sem escala, a barra só dá ordem relativa; o usuário pediu leitura de valor absoluto direto do gráfico |
 | 10 | `by_card[]` sempre completo (com zeros) | Empilhamento estável: cor/ordem do cartão não muda de mês para mês |
@@ -524,12 +416,9 @@ nem decisão de produto formal registrada.
       `docs/specs/SPEC-002-estimate-summary.md`, filho de `AYD-005`). IDs são globais no
       produto (`conventions.md` §3), então a referência `SPEC-002@api` é ambígua nos
       `children` dos dois AYDs. Renumerar um dos dois é correção de doc, à parte.
-- [ ] **Aplicar as ações da divergência de 24/ago/2026** — web (ordem do `Math.abs` e
-      cabeçalho vindo do KPI) e mobile (mesma auditoria, mesmo defeito) **feitos** em
-      25/ago/2026, nos dois clientes, com o aviso de categorias omitidas; a ação 5 foi
-      absorvida pelo mapa de calor (§ Ações) e sai junto com ele. Ver
-      [§ Divergência de 24/ago/2026](#divergência-de-24ago2026--categoria-positiva-na-tela).
-      A causa raiz é tratada à parte, em `AYD-006`.
+- [ ] **Categoria de fallback do import em duas flavors + backfill** — é o que faz uma
+      `Category` de despesa fechar positiva sem estorno real. Contrato de import, não de
+      Análises: vive em `AYD-006@context` e é pendência da api lá.
 - [ ] **Detalhe do dia (fase 2 do mapa de calor)** — tocar/clicar numa célula abre valor,
       quantidade e top categorias daquele dia, com link para a lista de `Movement`s já
       filtrada pela data. É o que fecha o ciclo entre ver a anomalia e descobrir a causa;
