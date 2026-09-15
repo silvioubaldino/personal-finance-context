@@ -124,7 +124,7 @@ Semântica:
 | `current_month.budget` | mês de `to`. `budgeted` vem do `Estimate`; `realized` = pagos do mês (reusa lógica teto/piso do `Balance`) |
 | `credit_card_invoices.cards[]` | Todo `CreditCard` com pelo menos uma `Invoice` no período. Ordenado por `name`; é a legenda/ordem de empilhamento canônica. `color` é a cor do próprio `CreditCard` (`#RRGGBB`) e vem **vazia** quando o usuário não escolheu nenhuma — o cliente aplica o fallback (§ Decisões, #11) |
 | `credit_card_invoices.series[]` | 1 entrada por mês do span (mesmo eixo de `monthly_series`, meses sem fatura zerados). Uma `Invoice` cai no mês do seu **`due_date`** (§ Decisões, #8). `by_card[]` traz **todos** os cartões de `cards[]`, com `0` onde não houve fatura, para o empilhamento não “pular” cor. `total` = soma de `by_card[].amount` |
-| `expense_daily_distribution[]` | Uma entrada **por dia do span**, inclusive os dias sem gasto (`count: 0`, `total: 0`) — mesmo motivo do zero-fill de `by_card` (decisão #10): o calendário é um eixo estável, e é o zero-fill que faz de "dia sem gasto" um dado do servidor em vez de uma inferência do cliente. `date` no formato `2006-01-02`, em ordem crescente. `count` = quantidade de `Movement`s de despesa; `total` = soma dos valores, sempre **negativo** (`0` no dia sem gasto). Recorte **comportamental** (decisão #7): pagas **e** pendentes, pelo dia da própria compra, e **com `Category`** — sem ela não há como classificar receita×despesa. **Fora dos invariantes de conciliação** |
+| `expense_daily_distribution[]` | Uma entrada **por dia do span**, inclusive os dias sem gasto (`count: 0`, `total: 0`) — mesmo motivo do zero-fill de `by_card` (decisão #10): o calendário é um eixo estável, e é o zero-fill que faz de "dia sem gasto" um dado do servidor em vez de uma inferência do cliente. `date` no formato `2006-01-02`, em ordem crescente. `count` = quantidade de `Movement`s de despesa; `total` = soma crua dos valores do dia — **normalmente negativo**, mas **positivo** num dia em que o estorno supera o gasto, e `0` no dia sem gasto. Classificar por sinal para evitar isso é justamente o que a decisão #7 proíbe. Recorte **comportamental** (decisão #7): pagas **e** pendentes, pelo dia da própria compra, e **com `Category`** — sem ela não há como classificar receita×despesa. **Fora dos invariantes de conciliação** |
 | `expense_weekday_distribution[]` | **Deprecado** (decisão #15) — mantido no payload por um ciclo de release para os clientes já publicados. É a marginal por coluna de `expense_daily_distribution`; cliente novo deriva dela e não lê este campo. Sempre **7 entradas**, `weekday` 0=domingo … 6=sábado (mesma numeração de `time.Weekday`). `count` = quantidade de `Movement`s de despesa; `percentage` = `count / total de despesas do período` (fração 0–1, **0** quando não há despesa) |
 | `expense_by_category[]` | Uma entrada por `Category` com despesa **paga** no período (soma de `Movement`s, exclui `internal_transfer`). Ordenado da maior despesa para a menor (em módulo). Categoria sem despesa paga no período **não aparece** — ao contrário de `by_card`, não há eixo de meses para manter estável, então não há zero-fill. `color` é a cor da própria `Category` e pode vir vazia (mesma regra do cartão, decisão #11) |
 | `kpis` | Só `total_income` e `total_expense` do período |
@@ -363,6 +363,13 @@ sem ele o usuário olha, acha bonito e não conclui nada. As frases variam com o
 escopo — quantidade de dias sem gasto, concentração dos dias mais caros ("seus 3 dias mais
 caros somam 62% do mês"), peso da primeira semana, maior sequência sem gastar e, no escopo
 Ano, a faixa de dias do mês que concentra o gasto.
+
+**Dia de total positivo.** Um dia pode fechar com `total > 0` (estorno maior que o gasto),
+pelo mesmo motivo que uma `Category` pode — a classificação é por `is_income`, e excluir a
+linha pelo sinal seria o defeito que a decisão #7 fecha. No modo Valor esse dia **não é
+pintado na rampa**: recebe o mesmo tratamento visual do dia sem gasto, porque não há gasto a
+representar, e o valor real aparece no detalhe do dia. No modo Quantidade ele conta normal —
+houve movimentação. A faixa de insight nunca soma dias positivos como gasto.
 
 **Persistência do modo.** A escolha Valor/Quantidade é lembrada **localmente, por
 dispositivo** (cookie no web, storage de preferências local no mobile) — não viaja para
