@@ -4,7 +4,7 @@ type: architecture
 title: Visão de arquitetura (C4 vivo)
 status: approved
 created: 2025-01-01
-updated: 2026-06-25
+updated: 2026-07-07
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: []
@@ -44,6 +44,7 @@ flowchart TB
     auth["Auth<br/>(Firebase Auth)"]
     db[("Database<br/>(Neon · Postgres)")]
     ai["Generative AI<br/>(Google Gemini / ADK)"]
+    vercel["Vercel RUM<br/>(Speed Insights · Web Vitals + Analytics)"]
 
     subgraph pay[Gateways de pagamento]
         stripe["Stripe<br/>(assinatura web)"]
@@ -59,6 +60,9 @@ flowchart TB
 
     mobile -->|"HTTPS · Bearer ID token"| api
     web -->|"HTTPS · Bearer ID token"| api
+    mobile -.->|"telemetria · POST /v1/telemetry"| api
+    web -.->|"telemetria · POST /v1/telemetry"| api
+    web -.->|"Web Vitals · RUM nativo"| vercel
     mobile -.->|"signup / login"| auth
     web -.->|"signup / login"| auth
     api -->|"verifica ID token"| auth
@@ -82,6 +86,18 @@ flowchart TB
 > contratos (convenção `biz_*`, roteamento por sinal, KPIs/SLOs) estão em `AYD-002`; a
 > decisão/justificativa arquitetural em si ainda não foi formalizada como `ADR` —
 > pendente (ver `RNF-04@context`).
+>
+> **Ingestão de telemetria dos clientes:** web e mobile enviam métricas/logs pelo mesmo
+> ponto de ingestão único da API (`POST /v1/telemetry`), que reencaminha ao OTel
+> Collector — não há caminho direto do cliente para o backend de observabilidade final.
+>
+> **Vercel RUM (só web):** o `Speed Insights`/`Analytics` da Vercel continua **configurado
+> e ativo** (Web Vitals e page views, sob consentimento LGPD), como já estava. É um
+> **painel nativo próprio, separado** — os dados vivem no dashboard da Vercel e **não são
+> bridgeados para o Grafana** nesta fase (o free tier da Vercel não exporta Web Vitals via
+> OTLP/Prometheus de forma trivial). Ter Web Vitals no painel único do Grafana é um
+> follow-up e se faz **emitindo-os nós mesmos** via `/v1/telemetry` (métricas `app_*`),
+> não importando os dados da Vercel.
 
 ## Containers e integrações (legenda)
 
@@ -100,6 +116,7 @@ flowchart TB
 | **Grafana Cloud** | Dashboards de saúde técnica (RED/USE); retenção de 14 dias | Grafana Cloud (free tier) |
 | **Cloud Monitoring** | KPIs de negócio (`biz_*`); retenção de 24 meses | Google Cloud Monitoring |
 | **Cloud Logging** | Logs estruturados da API | Google Cloud Logging |
+| **Vercel RUM** | RUM nativo do web (Web Vitals via Speed Insights + page views via Analytics); painel próprio, **não** bridgeado ao Grafana | Vercel (free tier) |
 
 > Mantenha a tabela e o diagrama em sincronia — se divergirem, **a tabela vence** (texto sobre
 > desenho, `conventions.md` §10).

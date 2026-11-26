@@ -10,7 +10,9 @@ owner: Silvio Ubaldino
 # Changelog — Context
 
 All notable changes to the shared docs (PROD, REQ, AYD, ROAD, decisions) are documented
-here. This is where the audit trail of the "why" behind the **living** documents lives.
+here — **what** changed in each of them, so the living docs have a trail of edits. The
+**why** is not repeated here: it lives inside the doc that changed (an AYD states its own
+rationale, a PDR/ADR *is* the rationale).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this
 repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -20,25 +22,45 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Unreleased:** unreleased work accrues under `## Unreleased` (always the top block), with
   no date/version. On the PRs, `## Unreleased` becomes `## [dd-MM-yyyy - vX.Y.Z]`
   (SemVer) and a new empty `## Unreleased` is opened above it.
-- **One line per PR:** each PR adds a **single line** describing summarized what it delivers — general,
-  no implementation or docs-framework detail; reference the PR (e.g. `[PR#02](url)`). The
-  line **may omit SPEC/PLAN additions** (tracked by their own files/git): if a PR only adds a
-  SPEC/PLAN, summarize the feature they open.
+- **One line per PR, ≤350 characters:** each PR adds a **single line**, at most 350
+  characters, stating **what** changed — never the how or the why (implementation details,
+  rationale, and docs-framework mechanics stay out); reference the PR (e.g. `[PR#02](url)`).
+  The line **may omit SPEC/PLAN additions** (tracked by their own files/git): if a PR only
+  adds a SPEC/PLAN, summarize the feature they open.
 
 ## Unreleased
 
 - Added SPEC-001 in api, web and mobile for AYD-004 (invoice import), now covering the whole design: the api extracts and persists a credit card invoice reusing the existing invoice rules, the previous invoice's payment and installments belonging to later invoices are flagged instead of silently dropped, and installments already registered in the app are linked and repriced instead of duplicated; web and mobile review the extracted items, show the invoice metadata and every non-fatal warning, and let the user reinclude a flagged item or accept, undo and set an installment link by hand. AYD-004 also gained the optional `credit_card_id` on `/extract` (without it the server cannot derive the invoice period or search existing series, so the enrichment degrades and `confirm-invoice` reapplies the rules defensively), restricted the future-competence rule to installments so an ordinary purchase dated after the closing day still reaches the next invoice, and corrected the credit-limit error name. Open items found while reading the code — a positive refund classified as income, plan limits not applied to invoice import, `invoice_id` overriding date-based invoice resolution, a paid invoice aborting the import midway, correction reimports and the interaction with invoice payment in AYD-003 — are recorded as questions, not implemented.
-- Added AYD-004 (credit card invoice import design: layered statement/invoice
-  differentiation, `confirm-invoice` contract reusing the existing `InvoiceUseCase`,
-  phased rollout), covering api, web and mobile; sourced from `personal-finance`'s
-  `AyDimportfatura.md` design notes; linked as a child of REQ-001.
-- Added AYD-003 (financial analytics design: trends over time, budget vs. actual,
-  savings-rate KPIs), covering api, web and mobile; linked as a child of REQ-001.
-- Added AYD-002 (monitoring/observability design: OTel Collector sidecar routing,
-  `biz_*` business KPI catalog, SLO targets and rollout phases), the first real AYD,
-  sourced from `personal-finance`'s informal design notes (`AyDmonitoramento.md` /
-  `diagramainframonitoramento.md`); linked as a child of REQ-001.
-- Filled in GLO, PROD-001, REQ-001 and ARCH from product/code analysis (vision, personas,
-  functional and non-functional requirements, business rules and the C4 container view for the
-  features already in production); renamed `Transfer` to `InternalTransfer` in GLO per review.
+- Updated AYD-003 (financial analytics): the client-side actions of the 24/Aug/2026
+  divergence are done on web and mobile — positive categories no longer render as spending
+  bars and the card total comes from the expense KPI; only the api action is still open.
+- Added AYD-006 (import fallback category): uncategorized inflows from a statement import no
+  longer land in an expense category — the fallback now has an income flavor, chosen by sign
+  at write time, plus a backfill for the rows already stored. User-facing numbers change.
+- Updated AYD-003 (financial analytics): recorded the category-total divergence — the client
+  totals expenses from the KPI instead of the drawn bars, and signals categories omitted for
+  closing positive.
+- Updated AYD-003 (financial analytics): pinned the payload's reconciliation invariants —
+  expenses by category, the monthly series and the KPIs must add up to the same totals, and a
+  category whose period closes positive stays in the array.
+- Updated AYD-003 (financial analytics): the money aggregates now use AYD-005's canonical
+  realized cut — the credit card is counted once, itemized by its real categories, and
+  "Realizado" is the plain paid sum. User-facing numbers change.
+- Updated AYD-003 (financial analytics): recorded the web as implemented and restated the
+  screen as five visualizations plus KPIs in the shipped order.
+- Updated AYD-005 (planning): fixed two claims that did not match the server — a card item
+  counts in its Invoice's due-date month and is born unpaid.
+- Added AYD-005: internal transfer between wallets design, covering api, web and mobile.
+- Updated AYD-003 (financial analytics): added a Month option to the period scope toggle.
+- Updated AYD-003 (financial analytics): documented the Year/Quarter scope toggle.
+- Updated AYD-003 (financial analytics): added a yearly expense-by-category breakdown.
+- Updated AYD-003 (financial analytics): replaced the period KPIs with total income/expense,
+  added credit card invoice totals by card and an expense distribution by weekday, and
+  added currency axes to the money charts.
+- Updated AYD-002 and ARCH (observability): unified web and mobile telemetry onto a single
+  ingestion contract and updated the architecture diagram.
+- Added AYD-004: credit card invoice import design, covering api, web and mobile.
+- Added AYD-003: financial analytics design, covering api, web and mobile.
+- Added AYD-002: monitoring and observability design, covering api, web and mobile.
+- Filled in GLO, PROD-001, REQ-001 and ARCH from product and code analysis.
 - Documentation initialized from the scaffold.
