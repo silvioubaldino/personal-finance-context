@@ -4,10 +4,10 @@ type: requirements
 title: Requisitos do produto
 status: draft
 created: 2025-01-01
-updated: 2026-08-18
+updated: 2026-11-26
 owner: Silvio Ubaldino
 parents: [PROD-001]
-children: [AYD-002, AYD-003, AYD-004, AYD-005]
+children: [AYD-002, AYD-003, AYD-004, AYD-005, AYD-006, AYD-007]
 related: [GLO]
 tags: []
 superseded_by: null
@@ -19,8 +19,9 @@ superseded_by: null
 > (extraídos da análise do código), não um MVP por lançar. `children` lista os `AYD`s reais
 > já existentes por feature — `AYD-002` (monitoramento/observabilidade), `AYD-003` (análises
 > financeiras, em design), `AYD-004` (import de fatura de cartão, refina RF-07, em design) e
-> `AYD-005` (planejamentos orçado × realizado, refina RF-05, aprovado); o `AYD-001` no
-> scaffold é só exemplo.
+> `AYD-005` (planejamentos orçado × realizado, refina RF-05, aprovado), `AYD-006` (categoria
+> de fallback do import) e `AYD-007` (adiantamento de fatura, refina RF-06 e RF-07, em
+> design); o `AYD-001` no scaffold é só exemplo.
 
 ## Funcionais (RF)
 | ID | Requisito | Prioridade (MoSCoW) | Critério de aceite |
@@ -50,7 +51,7 @@ superseded_by: null
 
 ## Regras de negócio
 - RN-01: Toda `Movement` deve ter `Category` e `Subcategory` (obrigatório para relatórios e `Estimate`).
-- RN-02: `Movement` em `CreditCard` não afeta o `Balance` da `Wallet` — só impacta quando a `Invoice` correspondente é paga.
+- RN-02: `Movement` em `CreditCard` não afeta o `Balance` da `Wallet` — só impacta quando a `Invoice` correspondente é paga — na quitação ou em `InvoiceAdvancePayment`s antes dela (AYD-007).
 - RN-03: Usuários do plano `free` têm `Limits` (padrão: 2 `Wallet`s, 1 `CreditCard`, 50 `Movement`s/mês, 3 recorrências/mês — configuráveis); usuários `plus` não têm limite.
 - RN-04: `InternalTransfer` é sempre duas `Movement`s ligadas por `pair_id` (uma saída, uma entrada) e nunca conta como entrada/saída isolada no resultado do período.
 - RN-05: Cancelamento de `Subscription` mantém acesso `plus` até o fim do ciclo de cobrança vigente (downgrade gracioso).
