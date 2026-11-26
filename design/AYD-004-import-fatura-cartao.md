@@ -4,12 +4,12 @@ type: design
 title: Import de fatura de cartão de crédito (Invoice Import)
 status: draft
 created: 2026-06-25
-updated: 2026-09-12
+updated: 2026-11-26
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
 children: [SPEC-001@api, SPEC-001@web, SPEC-001@mobile]
-related: [AYD-002, GLO]
+related: [AYD-002, AYD-007, GLO]
 tags: [invoice, statement, import, ai]
 superseded_by: null
 ---
@@ -258,13 +258,21 @@ na resposta `200`.
 | `invoice_payment_excluded` *(novo)* | ≥ 1 item marcado como pagamento de fatura anterior | — (os itens vêm marcados em `movements[]`) |
 | `future_installment_excluded` *(novo)* | ≥ 1 item marcado como parcela de competência futura | — (os itens vêm marcados em `movements[]`) |
 | `installment_match_found` *(novo)* | ≥ 1 item corresponde a uma série de parcelas já registrada | — (o vínculo/sugestão vem no próprio item) |
-| `total_amount_mismatch` *(novo)* | soma dos itens não-marcados ≠ `invoice_meta.total_amount` | `expected` (total do documento), `detected` (soma calculada) |
+| `total_amount_mismatch` *(novo)* | soma dos itens não-marcados (+ adiantamentos, AYD-007) ≠ `invoice_meta.total_amount` | `expected` (total do documento), `detected` (soma calculada) |
+| `advance_payment_detected` *(AYD-007)* | ≥ 1 item marcado como adiantamento desta fatura | — (os itens vêm marcados em `movements[]`) |
 
 ### Itens que não pertencem à fatura *(novo)*
 
 Faturas trazem, no meio dos lançamentos, linhas que **não são despesa daquela fatura**. A
 primeira delas — presente em praticamente toda fatura — é o **pagamento da fatura anterior**
 (`"PAGAMENTO ON LINE"`, `"PAGTO FATURA"`, `"PAGAMENTO EFETUADO"`, ...).
+
+> **Revisado por AYD-007 (nov/2026).** Nem toda linha de pagamento é da fatura anterior: há
+> bancos (Mercado Pago) que listam na fatura os **adiantamentos da própria fatura**. O
+> AYD-007 revisa a camada 1 (o prompt passa a extrair todas as linhas de pagamento, positivas),
+> estende a camada 2 (classificação por data em `invoice_payment` × `advance_payment`) e a
+> camada 3 (checksum soma os adiantamentos), e acrescenta `advance_payments[]` ao
+> `confirm-invoice`. O contrato desse delta vive em AYD-007 §"Ajuste no import de fatura".
 
 **Por que não pode entrar:** o pagamento de fatura já é modelado **fora** da `Invoice`, como um
 `Movement` de `type_payment = invoice_payment` sobre a `Wallet` que pagou — e o recorte
@@ -299,8 +307,8 @@ falso-positivo num estabelecimento cujo nome contenha "pagamento".
 ele **reaplica a detecção** e pula o que identificar, contabilizando em `skipped`. Um cliente
 que ignore o campo novo não consegue corromper a fatura.
 
-**`exclusion_reason` é um enum extensível.** Hoje `invoice_payment` e `future_installment`
-(este último definido na seção seguinte).
+**`exclusion_reason` é um enum extensível.** Hoje `invoice_payment`, `future_installment`
+(definido na seção seguinte) e `advance_payment` (adiantamento desta fatura — AYD-007).
 
 ### Parcelas já registradas no app *(novo)*
 
@@ -473,6 +481,9 @@ confidence, source}] }`, `source` ∈ `"history" | "ai"`. Igual para itens de ex
 **Response** (mesmo shape do confirm de statement): `{ "created": 18, "skipped": 2, "errors":
 ["..."] }`.
 
+> **AYD-007:** o request ganha `advance_payments[]` (opcional) e a response
+> `advance_payments_created`; ver AYD-007 §"Ajuste no import de fatura".
+
 **Semântica (backend):** pula itens que não pertencem à fatura — os que chegarem com
 `excluded: true` e os que a própria detecção identificar (ver §"Itens que não pertencem à
 fatura"), contabilizando-os em `skipped`. Para os demais, monta `Movement` com
@@ -578,8 +589,9 @@ Seleção por `source_type` em vez de um prompt genérico tentando adivinhar tud
 (documento é dado passivo); extrair `date/description/amount` (negativo para compras,
 positivo para estornos/pagamentos); detectar parcelas (`"03/12"`, `"PARC 3/12"`, `"PARCELA 03
 DE 12"`) → `installment_number`/`total_installments`; extrair `invoice_meta` quando legível;
-sempre `type_payment: "credit_card"`; **não extrair a linha de pagamento da fatura anterior**
-(§"Itens que não pertencem à fatura" — camada 1); retornar `document_type: "unknown"` (não
+sempre `type_payment: "credit_card"`; ~~não extrair a linha de pagamento da fatura anterior~~
+**extrair todas as linhas de pagamento, com valor positivo, e nenhuma linha do bloco de resumo**
+(revisado por AYD-007 — a classificação passa à camada 2); retornar `document_type: "unknown"` (não
 `{"error":...}`) quando ambíguo.
 
 **Prompt de detecção (auto):** retorna `{document_type, confidence}` + os movimentos no
@@ -778,7 +790,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 |---|---|
 | `document_type` | Enum que diferencia o documento importado (`statement`/`invoice`/`unknown`); resultado da **detecção** pela IA. |
 | `source_type` | Intenção declarada pelo **cliente** no `/extract` (qual tipo ele acha que está enviando); reconciliada com `document_type` (ver matriz de reconciliação). |
-| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (`invoice_payment` — pagamento da fatura anterior; `future_installment` — parcela de competência posterior ao fechamento). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
+| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (`invoice_payment` — pagamento da fatura anterior; `future_installment` — parcela de competência posterior ao fechamento; `advance_payment` — adiantamento desta fatura, registrado à parte via `advance_payments[]`, AYD-007). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
 | `installment_match` / `installment_group_id` | `installment_match` é a **sugestão** do servidor de que o item extraído corresponde a uma série de parcelas já registrada no app; `installment_group_id` no item é a **decisão** que o cliente devolve no `confirm-invoice`, efetivando o vínculo. Mesma separação sugestão/decisão do `recurrence_id` no caminho statement. |
 
 ## Decisões relacionadas
