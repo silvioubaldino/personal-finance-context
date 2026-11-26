@@ -94,7 +94,7 @@ Não foi erro do modelo: a extração estava certa. Falta ao domínio o conceito
 | 1 | **Adiantamento é um `Movement` com `type_payment: invoice_payment`**, `is_paid: true`, ligado à fatura por `invoice_id`, com **ID próprio**. Sem tipo novo. | Todo recorte que exclui pagamento de fatura (realizado AYD-003/AYD-005, agente, planejamentos, gráficos por categoria dos clientes) já cobre o adiantamento sem mudança. Um `type_payment` novo vazaria como despesa em cada um desses filtros. |
 | 2 | **Quitação e adiantamento são distinguíveis no contrato** pelo campo `is_advance_payment` no `Movement`. | Os clientes precisam saber qual `invoice_payment` é a linha da fatura e qual é um débito real a exibir. O mecanismo interno (manter `id == invoice_id` para a quitação, coluna explícita etc.) é escolha da SPEC@api, mas a quitação **continua única por fatura**. |
 | 3 | **`invoice.amount` continua bruto** (soma das compras da competência). Entram dois campos derivados: `advance_paid_amount` e `remaining_amount`. | "Faturas por cartão" (AYD-003) e o limite consumido seguem a competência; o adiantamento muda **quanto falta pagar**, não **quanto se gastou**. |
-| 4 | **Só em fatura não paga, e sempre menor que o restante** (em módulo). Adiantar o restante inteiro é quitar: usa-se `pay`, que já aceita `payment_date` anterior ao vencimento. | Mantém uma única forma de quitar e evita fatura "paga por adiantamentos" sem quitação. Pagar mais que o restante (saldo credor) fica fora de escopo (ver questões em aberto). |
+| 4 | **Só em fatura não paga, e sempre menor que o restante** (em módulo). Adiantar o restante inteiro é quitar: usa-se `pay`, que já aceita `payment_date` anterior ao vencimento. **Pagar mais que o restante (saldo credor) é proibido** (confirmado em nov/2026). | Mantém uma única forma de quitar e evita fatura "paga por adiantamentos" sem quitação. O app não modela crédito a favor do usuário na fatura seguinte. |
 | 5 | **Efeitos imediatos na data do adiantamento:** debita a `Wallet` e **libera limite** do cartão no valor adiantado. A fatura continua aberta. | É o que o banco faz: o limite volta na hora do pagamento. RN-02 passa a ler "a `Invoice` afeta o `Balance` quando paga, **no todo ou em adiantamentos**". |
 | 6 | **`pay` opera sobre o restante:** `amount` padrão = `remaining_amount`; válido entre `remaining_amount` e 0; a sobra para a fatura seguinte é `remaining_amount − pago`. | Sem isso, o caso do Mercado Pago vira a dívida fantasma de R$ 199,00 descrita na evidência. |
 | 7 | **`revert-pay` desfaz só a quitação.** Adiantamentos se desfazem um a um pelo `DELETE` próprio, e só com a fatura não paga (desfaz-se primeiro a quitação). | Desfazer a quitação não deve apagar pagamentos que de fato aconteceram, e a ordem fixa evita recalcular a sobra da fatura seguinte com uma base que mudou. |
@@ -385,9 +385,9 @@ resolução de fatura alvo, o hash e a mecânica `excluded`/`exclusion_reason` q
 
 ## Fora de escopo / questões em aberto
 
-- [ ] **Saldo credor:** pagar mais que o restante, ou adiantar numa fatura que ainda não tem
-      compras suficientes. O Mercado Pago aceita; aqui é rejeitado
-      (`advance_payment_settles_invoice`). Decidir se vira crédito na fatura seguinte.
+- [x] **Saldo credor — decidido (nov/2026): proibido.** Adiantar o valor que falta ou mais é
+      rejeitado (`advance_payment_settles_invoice`), mesmo que o banco aceite e gere crédito.
+      Quitar é pelo `pay`; crédito na fatura seguinte não existe no app.
 - [ ] **Pagamento ao cartão no extrato bancário:** o import de `Statement` traz o Pix/boleto
       pago ao cartão como despesa da `Wallet`, duplicando quitação e adiantamentos. Precisa de
       sugestão de vínculo (como `recurrence_id`) no caminho statement.
