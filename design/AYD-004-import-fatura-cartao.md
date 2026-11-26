@@ -4,12 +4,12 @@ type: design
 title: Import de fatura de cartão de crédito (Invoice Import)
 status: draft
 created: 2026-06-25
-updated: 2026-06-29
+updated: 2026-11-26
 owner: Silvio Ubaldino
 affects: [api, web, mobile]
 parents: [REQ-001]
-children: []
-related: [AYD-002, GLO]
+children: [SPEC-001@api, SPEC-001@web, SPEC-001@mobile]
+related: [AYD-002, AYD-007, GLO]
 tags: [invoice, statement, import, ai]
 superseded_by: null
 ---
@@ -40,13 +40,13 @@ usuário, isoladamente, são confiáveis o bastante com bancos heterogêneos).
 
 | Repo | Papel nesta feature | Status do desenho | SPEC gerada |
 |------|---------------------|--------------------|-------------|
-| api | Generaliza `/v2/statements/{extract,classify}` para também detectar/extrair fatura (prompt dedicado, parcelas, metadados); novo endpoint `POST /v2/statements/confirm-invoice` que reusa a `InvoiceUseCase` já existente | Detalhado — decisões de desenho confirmadas (§"Decisões de design"), pronto para implementação faseada | nenhuma ainda |
-| mobile | Hoje só importa extrato (escopado por `wallet_id`) via aba "import" do `MovementModal` → `StatementReviewScreen`. Precisa: enviar `source_type`, tratar `warnings`/parcelas na revisão, bifurcar o confirm para `confirm-invoice` com `credit_card_id`, e expor a entrada "Importar fatura" a partir da tela de cartões | Esqueleto — guia de integração geral (§"Guia de integração"), sem tela/componente desenhado | nenhuma ainda |
-| web | Hoje só importa extrato (escopado por `wallet_id`) via `StatementImportModal`, acionado pelo FAB global `AddMovementButton`. Mesmas mudanças de contrato do mobile; entrada natural é o card de fatura na página de cartões | Esqueleto — guia de integração geral (§"Guia de integração"), sem tela/componente desenhado | nenhuma ainda |
+| api | Generaliza `/v2/statements/{extract,classify}` para também detectar/extrair fatura (prompt dedicado, parcelas, metadados); novo endpoint `POST /v2/statements/confirm-invoice` que reusa a `InvoiceUseCase` já existente | Implementado (Phases 1–3): domain types, `ConfirmInvoice` usecase, 3 prompts Gemini (statement/invoice/auto), handler `confirm-invoice`, bootstrap wiring, 22 testes passando; Fase 5 parcial (exclusão do pagamento + `total_amount_mismatch`). **Pendente: Fase 6** | SPEC-001@api |
+| mobile | Hoje só importa extrato (escopado por `wallet_id`) via aba "import" do `MovementModal` → `StatementReviewScreen`. Precisa: enviar `source_type`, tratar `warnings`/parcelas na revisão, bifurcar o confirm para `confirm-invoice` com `credit_card_id`, e expor a entrada "Importar fatura" a partir da tela de cartões | Implementado (Phase 4): tipos alinhados ao contrato, `confirmInvoice`, hook `useConfirmInvoice`, `StatementReviewScreen` com bifurcação e badge de parcelas, entry point em `InvoiceDetailsModal`, strings i18n. **Pendente: Fase 6** (item marcado/`excluded`, chip de vínculo de parcela, sheet de vínculo manual) | SPEC-001@mobile |
+| web | Hoje só importa extrato (escopado por `wallet_id`) via `StatementImportModal`, acionado pelo FAB global `AddMovementButton`. Mesmas mudanças de contrato do mobile; entrada natural é o card de fatura na página de cartões | Implementado (Phase 4): tipos alinhados, `extractMovements`/`confirmInvoice`, hook estendido com `resolvedMode`/`typeWarning`, modal com alerta de mismatch e badge de parcelas, botão "Importar fatura" em `invoice-summary-card`; issue aberta: `creditCardId` no card de resumo (ver SPEC-001@web). **Pendente: Fase 6** (item marcado/`excluded`, chip de vínculo de parcela, vínculo manual) | SPEC-001@web |
 
-> `children` fica vazio: nenhuma `SPEC` formal foi escrita ainda em nenhum repo. Este AYD fixa
-> o contrato e os papéis; a SPEC@api (e, na sequência, SPEC@web/SPEC@mobile) é o próximo passo
-> antes de implementar (ver "Fora de escopo").
+> As três SPECs existem e estão ligadas em `children`. **Fase 6 (reconciliação de parcelas)
+> ainda não foi implementada em nenhum repo** — o contrato dela está fixado abaixo
+> (§"Parcelas já registradas no app", Decisões 7 e 8) e as SPECs precisam absorvê-lo.
 
 ## Sumário executivo (decisões-chave)
 
@@ -56,7 +56,9 @@ usuário, isoladamente, são confiáveis o bastante com bancos heterogêneos).
 | **Forma do "tipo"** | **Enum** `document_type` (`statement` / `invoice` / `unknown`), não um boolean — permite crescer (ex.: `receipt`) sem quebrar contrato. |
 | **Superfície de API** | **Reusa** `/extract` e `/classify` (parametrizados por tipo); **bifurca só o confirm**, porque a persistência de fatura diverge estruturalmente. Novo endpoint **`POST /v2/statements/confirm-invoice`**. |
 | **Persistência da fatura** | **Reusa a `InvoiceUseCase`** existente (`FindOrCreateInvoiceForMovement` + atualização de amount/limite) — não reimplementa regra de fatura; garante consistência com o lançamento manual de cartão. |
-| **Idempotência** | Hash de idempotência escopado por **`credit_card_id`** (em vez de `wallet_id`) para itens de fatura. |
+| **Idempotência** | Hash de idempotência escopado por **`credit_card_id`** (em vez de `wallet_id`) para itens de fatura. O hash é dedup **da mesma fonte**; reconciliar com lançamentos manuais exige matcher semântico (ver abaixo). |
+| **Itens que não são despesa desta fatura** | Pagamento da fatura anterior e parcelas de competência futura são **marcados, nunca removidos** (`excluded` + `exclusion_reason`); a UI os mostra desmarcados e o `confirm-invoice` reaplica a detecção. |
+| **Parcela já registrada no app** | O servidor **sugere o vínculo** com a série existente (`installment_match`), o cliente **decide** (`installment_group_id`), e o confirm **atualiza o valor** da parcela e **pula a série inteira** em vez de criar duplicatas. |
 | **Compatibilidade** | 100% retrocompatível: clientes atuais chamando `/extract` + `/confirm` sem `source_type` continuam funcionando como hoje (`statement`). |
 
 ```mermaid
@@ -170,6 +172,17 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
 | `file` | binário | sim | PDF, JPEG ou PNG. Máx 10 MB. |
 | `password` | string | não | Senha de abertura para PDF protegido. |
 | `source_type` *(novo)* | string | não | `statement` \| `invoice`. **Ausente = modo auto** (IA decide). Retrocompatível. |
+| `credit_card_id` *(novo)* | string (uuid) | não | Cartão de destino, quando a UI já conhece o contexto (fluxo aberto a partir de um cartão). Habilita os enriquecimentos de servidor da Fase 6. |
+
+> **Por que `credit_card_id` no `/extract`.** Os dois enriquecimentos da Fase 6 são
+> impossíveis sem o cartão: a regra de competência futura compara a data do item com
+> `invoice.PeriodEnd`, derivado do dia de fechamento **daquele** cartão, e o matcher de série
+> busca parcelas já registradas escopadas por `credit_card_id` + `total_installments`. É
+> **opcional** e o pipeline degrada em camadas, coerente com o princípio 2 ("falhar suave"):
+> sem ele a extração funciona igual, apenas sem `installment_match` e sem marcar
+> `future_installment` — e o `confirm-invoice`, que sempre recebe o `credit_card_id`, reaplica
+> as duas regras defensivamente (§"Semântica do vínculo"), então nenhum dado é corrompido por
+> um cliente que o omita. Mantém a retrocompatibilidade total da Fase 1.
 
 **Response `200`** (campos novos são aditivos):
 
@@ -178,7 +191,11 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
   "document_type": "invoice",          // (novo) tipo detectado pela IA
   "confidence": 0.94,                  // (novo) 0.0–1.0
   "warnings": [                         // (novo) não-fatais; [] quando tudo ok
-    { "type": "document_type_mismatch", "expected": "statement", "detected": "invoice" }
+    { "type": "document_type_mismatch", "expected": "statement", "detected": "invoice" },
+    { "type": "invoice_payment_excluded" },
+    { "type": "future_installment_excluded" },
+    { "type": "installment_match_found" },
+    { "type": "total_amount_mismatch", "expected": "-6035.06", "detected": "-11247.65" }
   ],
   "invoice_meta": {                     // (novo) presente só quando invoice
     "closing_date": "2026-06-03",
@@ -192,7 +209,35 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
       "amount": -120.00,
       "type_payment": "credit_card",
       "installment_number": 3,         // (novo) só invoice, se houver parcela
-      "total_installments": 12         // (novo) só invoice, se houver parcela
+      "total_installments": 12,        // (novo) só invoice, se houver parcela
+      "installment_match": {           // (novo) série já registrada no app — sugestão
+        "installment_group_id": "uuid",
+        "movement_id": "uuid",         // a parcela desta competência
+        "description": "TV da sala",   // como está registrada no app
+        "installment_number": 3,
+        "total_installments": 12,
+        "amount": -119.90,             // valor hoje registrado
+        "confidence": 0.95
+      },
+      "installment_group_id": "uuid"   // (novo) decisão: preenchido quando confiança alta
+    },
+    {
+      "date": "2026-07-07",
+      "description": "PAGAMENTO ON LINE",
+      "amount": -5212.59,
+      "type_payment": "credit_card",
+      "excluded": true,                      // (novo) não pertence a esta fatura
+      "exclusion_reason": "invoice_payment"  // (novo)
+    },
+    {
+      "date": "2026-09-03",
+      "description": "DROGARIA SP PARCELA 03 DE 03",
+      "amount": -198.67,
+      "type_payment": "credit_card",
+      "installment_number": 3,
+      "total_installments": 3,
+      "excluded": true,                          // cai numa fatura seguinte
+      "exclusion_reason": "future_installment"   // (novo)
     }
   ],
   "errors": ["movement #7: missing date"]
@@ -203,6 +248,202 @@ Limiar de confiança: reusa a constante já existente `ClassificationConfidenceT
 (422, `statement_password_required`); senha incorreta (422, `statement_wrong_password`).
 ~~Documento não é extrato (422)~~ — **removido**, vira `document_type: "unknown"` + warning
 na resposta `200`.
+
+**Tipos de `warnings[].type`:**
+
+| `type` | Quando ocorre | Campos usados |
+|---|---|---|
+| `document_type_mismatch` | `source_type` ≠ `document_type` detectado | `expected`, `detected` |
+| `low_confidence` | `confidence` < 0.6 | — |
+| `invoice_payment_excluded` *(novo)* | ≥ 1 item marcado como pagamento de fatura anterior | — (os itens vêm marcados em `movements[]`) |
+| `future_installment_excluded` *(novo)* | ≥ 1 item marcado como parcela de competência futura | — (os itens vêm marcados em `movements[]`) |
+| `installment_match_found` *(novo)* | ≥ 1 item corresponde a uma série de parcelas já registrada | — (o vínculo/sugestão vem no próprio item) |
+| `total_amount_mismatch` *(novo)* | soma dos itens não-marcados (+ adiantamentos, AYD-007) ≠ `invoice_meta.total_amount` | `expected` (total do documento), `detected` (soma calculada) |
+| `advance_payment_detected` *(AYD-007)* | ≥ 1 item marcado como adiantamento desta fatura | — (os itens vêm marcados em `movements[]`) |
+
+### Itens que não pertencem à fatura *(novo)*
+
+Faturas trazem, no meio dos lançamentos, linhas que **não são despesa daquela fatura**. A
+primeira delas — presente em praticamente toda fatura — é o **pagamento da fatura anterior**
+(`"PAGAMENTO ON LINE"`, `"PAGTO FATURA"`, `"PAGAMENTO EFETUADO"`, ...).
+
+> **Revisado por AYD-007 (nov/2026).** Nem toda linha de pagamento é da fatura anterior: há
+> bancos (Mercado Pago) que listam na fatura os **adiantamentos da própria fatura**. O
+> AYD-007 revisa a camada 1 (o prompt passa a extrair todas as linhas de pagamento, positivas),
+> estende a camada 2 (classificação por data em `invoice_payment` × `advance_payment`) e a
+> camada 3 (checksum soma os adiantamentos). As duas classes continuam **filtradas**: o import
+> da fatura nunca registra pagamento — ele nasce do botão ou do import do extrato bancário.
+> O contrato desse delta vive em AYD-007 §"Import da fatura do cartão — linhas de pagamento
+> filtradas".
+
+**Por que não pode entrar:** o pagamento de fatura já é modelado **fora** da `Invoice`, como um
+`Movement` de `type_payment = invoice_payment` sobre a `Wallet` que pagou — e o recorte
+canônico de "realizado" (AYD-003) o **exclui** dos agregados justamente para não contar a mesma
+despesa duas vezes. Importá-lo como item de fatura contradiz essa decisão e corrompe dados: o
+`confirm-invoice` soma cada item em `invoice.Amount` e no limite do cartão
+(`UpdateLimitDelta`), então uma linha de pagamento **infla a fatura e consome limite** que não
+foi gasto, podendo disparar `ErrInsufficientCreditLimit` num cartão com folga real.
+
+> **Evidência (fatura Inter, ago/2026 — teste funcional da SPEC-001@api):** a extração devolveu
+> 72 itens somando `-12.240,99`, enquanto o `total_amount` do próprio documento era
+> `-6.035,06`. A diferença é exatamente o pagamento da fatura anterior (`-5.212,59`) somado a 5
+> parcelas de competência futura (`-993,34`). O pagamento veio ainda com **sinal invertido**
+> (negativo, quando a Decisão 5 manda `+` para pagamentos), ou seja, somava em vez de abater.
+
+**Regra de contrato — defesa em três camadas**, mesma filosofia da diferenciação de tipo (nunca
+uma fonte só):
+
+| Camada | Onde | Papel |
+|---|---|---|
+| 1. Prompt | prompt de `invoice` e de auto-detecção | Instrui a IA a **não extrair** a linha de pagamento da fatura anterior. Ataca a raiz, custo zero — mas LLM não é determinístico, não basta sozinha. |
+| 2. Guarda determinística | api, no `/extract` | Detecta a linha por padrão de descrição e a **marca** (não remove). Independe de a IA ter acertado. |
+| 3. Checksum | api, no `/extract` | Compara a soma dos itens **não marcados** com `invoice_meta.total_amount`; divergência vira warning (Decisão 3, Fase 5). Rede de segurança agnóstica de banco: pega o que as camadas 1 e 2 não previram. |
+
+**Nunca sumir silenciosamente.** Coerente com o princípio 2 ("falhar suave") e com a regra de
+ouro da extração, o item detectado **continua em `movements[]`**, marcado com `excluded: true` e
+`exclusion_reason`. A UI o exibe desmarcado/esmaecido e explica ao usuário, em vez de o
+lançamento desaparecer sem rastro — importante porque a heurística de descrição pode dar
+falso-positivo num estabelecimento cujo nome contenha "pagamento".
+
+**O `confirm-invoice` não confia no cliente:** além de pular o que chegar com `excluded: true`,
+ele **reaplica a detecção** e pula o que identificar, contabilizando em `skipped`. Um cliente
+que ignore o campo novo não consegue corromper a fatura.
+
+**`exclusion_reason` é um enum extensível.** Hoje `invoice_payment`, `future_installment`
+(definido na seção seguinte) e `advance_payment` (adiantamento desta fatura, também filtrado — AYD-007).
+
+### Parcelas já registradas no app *(novo)*
+
+A segunda classe de item que não pode entrar cegamente é a **parcela de uma compra que o app já
+conhece**. Diferente do pagamento — que nunca pertence à fatura — esta pertence, mas o
+lançamento correspondente **já existe**: ou porque o usuário registrou a compra parcelada na
+hora da compra (o app gera a série inteira via `GenerateInstallmentMovements`), ou porque um
+import anterior já a criou.
+
+**Levantamento (api, ago/2026): não existe hoje nenhum mecanismo de vinculação.** Há três
+quase-mecanismos, e entender por que nenhum serve determina o desenho:
+
+| Mecanismo | O que faz | Por que não cobre |
+|---|---|---|
+| `IdempotencyHash` | Dedup do import (`FindExistingHashes`) | Só existe em movements **criados por import**: a criação manual (`handleCreditCardMovement`) nunca preenche o campo, e `NULL` nunca casa no `IN (...)`. |
+| `InstallmentGroupID` | Agrupa a série de parcelas | Único leitor é `FindByInstallmentGroupFromNumber`, consumido só pelo delete-all-next. Nunca usado para reconciliar import. |
+| Link por `recurrence_id` (`/confirm`) | Vincula linha de extrato a uma recorrência existente, via `UpdateStatementLink` | Só extrato, só recorrência — mas **é o precedente arquitetônico** deste desenho: servidor sugere, cliente decide, servidor revalida. |
+
+**Por que o hash não resolve — e não pode resolver.** Dois motivos independentes:
+
+1. Mesmo em séries criadas pelo próprio import o hash erra duas vezes:
+   `BuildInstallmentMovement` copia a descrição da parcela original (a parcela 4 gerada guarda
+   o texto "…PARCELA 03/12", enquanto a fatura seguinte traz "…PARCELA 04/12") e a data gerada
+   é `dataCompra + N meses`, não a data de competência que a fatura mostra. Descrição e data
+   são ambas insumos do hash.
+2. Compras registradas manualmente não têm hash **nenhum** — e preencher o hash na criação
+   manual também não resolveria: a descrição que o usuário digita ("TV da sala") jamais bate
+   com a do banco ("MAGALU\*MAGAZINELUIZA PARC 04/12"). **O hash é dedup da mesma fonte;
+   reconciliar manual × banco exige matcher semântico** — são mecanismos diferentes por
+   construção, não um caso de arrumar o hash.
+
+**Severidade de um match perdido:** o `confirm-invoice` soma cada item em `invoice.Amount` e no
+limite do cartão. Uma série não reconhecida não duplica *um* lançamento — duplica *N*, infla a
+fatura e consome limite real, podendo disparar `ErrInsufficientCreditLimit` num cartão com folga.
+
+#### Três casos, tratamentos diferentes
+
+Só o caso B é problema de vinculação. Tratá-los como um só — uma pergunta ao usuário por item
+parcelado — tornaria a revisão de uma fatura de 70+ itens inviável:
+
+| Caso | Situação | Tratamento |
+|---|---|---|
+| **A** — competência futura | A fatura lista parcelas que caem em faturas seguintes | `excluded` + `exclusion_reason: "future_installment"`. **Não é matching:** `Invoice` já tem `PeriodStart`/`PeriodEnd` derivados do dia de fechamento do cartão — item com `date > PeriodEnd` não é desta fatura. Regra determinística, zero decisão do usuário. |
+| **B** — série já registrada | Existe grupo de parcelas correspondente no app | **Vincula** em vez de criar (contrato abaixo). |
+| **C** — parcelada nova | Nunca vista pelo app | Comportamento atual: `GenerateInstallmentMovements` cria a série restante. |
+
+#### Assinatura do match (caso B)
+
+Não por hash. Por **identidade de parcelamento no cartão**: mesmo `credit_card_id`, mesmo
+`total_installments`, valor da parcela dentro de tolerância e **raiz da descrição**
+compatível. É uma assinatura bem mais apertada que a de recorrência — que é fuzzy, e por isso
+é 100% manual hoje.
+
+Primitiva de domínio que falta: **`StripInstallmentSuffix`**. Hoje `NormalizeDescription`
+produz `"mercado livre parcela 0312"`, com o sufixo embutido — que muda todo mês. Removê-lo
+antes de normalizar dá a raiz estável entre competências. Vive em `internal/domain/statement.go`,
+ao lado de `IsInvoicePaymentDescription`, e é testável sem banco.
+
+Três níveis de confiança, com tratamento distinto na UI:
+
+| Confiança | Critério | Comportamento |
+|---|---|---|
+| **Alta** | `total_installments` + valor (± tolerância) + raiz da descrição | Item vem **já vinculado**: `installment_group_id` preenchido |
+| **Média** | `total_installments` + valor batem; raiz divergiu | Item vem como **sugestão**: `installment_match` presente, `installment_group_id` vazio |
+| **Nenhuma** | — | Caso C; a UI oferece vinculação manual para o que o matcher não pegou |
+
+**Sugestão e decisão são campos separados de propósito** — `installment_match` é o que o
+servidor achou, `installment_group_id` é o que vale no confirm. A UI pode aceitar, recusar ou
+trocar o vínculo sem perder a evidência que motivou a sugestão. Mesma separação do
+`recurrence_id` no caminho statement.
+
+**Pré-aplicar em vez de perguntar** é decisão de UX deliberada: o match de alta confiança é
+preciso o bastante, e numa fatura de 70+ itens um modal por parcela mata a feature. O mesmo
+princípio já adotado no pagamento da fatura anterior — o servidor decide, a UI mostra o estado
+resolvido e o desfazer custa um toque (ver §"Guia de integração", item 6).
+
+#### Semântica do vínculo no `confirm-invoice`
+
+**Atualiza o valor da parcela existente** (Decisão 8). Parcelamentos frequentemente variam
+centavos entre parcelas — o banco distribui o arredondamento — e a fatura é a fonte de verdade
+sobre quanto foi de fato cobrado. O ajuste em `invoice.Amount` e no limite do cartão é pelo
+**delta** (`valorNovo − valorAntigo`): `InvoiceUseCase.UpdateAmount` e
+`creditCardRepo.UpdateLimitDelta` já são aditivos, nenhum método novo é necessário nesse ponto.
+
+**O que o vínculo NÃO altera**, e por quê:
+
+| Campo | Motivo |
+|---|---|
+| `description` | É o rótulo que o usuário escolheu e reconhece no dashboard; sobrescrever com o texto do banco seria edição destrutiva silenciosa. |
+| `date` | A parcela já está parenteada à fatura certa; mudar a data pode reparenteá-la para outra competência. |
+| `is_paid` | Uma linha na fatura não significa parcela paga — quem quita é o pagamento da fatura, modelado fora dela. |
+
+Por isso **`UpdateStatementLink` não serve aqui**: ele sobrescreve descrição, data e carteira e
+força `is_paid = true`. O caminho de vínculo de parcela precisa de um método estreito, que
+atualize só o valor.
+
+**Pula a série inteira, não só a parcela** (Decisão 8). Vinculada a parcela desta competência,
+as restantes já existem no mesmo grupo — nada é criado. O `skipped` contabiliza
+`total_installments − installment_number + 1`, a mesma contagem que o dedup por hash já faz
+hoje para séries repetidas.
+
+**Convergência:** como cada import corrige apenas a parcela da sua competência, a série
+converge para os valores reais mês a mês, conforme as faturas vão sendo importadas. As parcelas
+futuras seguem com o valor estimado até a fatura correspondente chegar — comportamento
+desejado, não lacuna.
+
+**O `confirm-invoice` continua não confiando no cliente:** um `installment_group_id` que não
+exista, não pertença ao usuário ou não seja do `credit_card_id` informado é rejeitado, e o item
+cai no caminho normal de criação.
+
+### Atomicidade da persistência *(novo)*
+
+Gravar um item de fatura são três escritas: o `Movement`, o total da `Invoice`
+(`invoice.Amount`) e o limite do cartão (`UpdateLimitDelta`). Até ago/2026 as três rodavam
+soltas — cada uma abrindo a própria transação — e as duas últimas ainda **descartavam o erro**
+(`_, _ =`). Uma falha em qualquer ponto deixava fatura e limite dessincronizados dos
+movimentos, sem sinal nenhum na resposta.
+
+**Regra:** as três escritas de um item acontecem numa transação só. Para um item parcelado, a
+unidade é a **série inteira** — uma série pela metade (parcelas 1..6 gravadas, 7..12 não)
+infla a fatura sem representar a compra, e é pior que nenhuma.
+
+A resolução da fatura (`FindOrCreateInvoiceForMovement`) fica **fora** da transação de
+propósito: ela abre a própria transação ao criar uma fatura, e chamá-la lá dentro abriria uma
+transação paralela, que commitaria por fora de um eventual rollback. Fatura criada sem itens é
+inofensiva e reaproveitável na próxima tentativa.
+
+A granularidade continua sendo **por item**, não por requisição: `confirm-invoice` devolve
+`created`/`skipped`/`errors` e o sucesso parcial é comportamento desejado — um item problemático
+não derruba a importação inteira.
+
+> Consequência para a Fase 6: a atualização de valor do vínculo entra na mesma transação do
+> ajuste de delta na fatura e no limite, sem herdar a fragilidade antiga.
 
 ### `POST /v2/statements/classify` — inalterado
 
@@ -232,7 +473,8 @@ confidence, source}] }`, `source` ∈ `"history" | "ai"`. Igual para itens de ex
       "category_id": "uuid|null",
       "sub_category_id": "uuid|null",
       "installment_number": 3,
-      "total_installments": 12
+      "total_installments": 12,
+      "installment_group_id": "uuid|null"  // (novo) vincula a uma série já registrada
     }
   ]
 }
@@ -241,14 +483,26 @@ confidence, source}] }`, `source` ∈ `"history" | "ai"`. Igual para itens de ex
 **Response** (mesmo shape do confirm de statement): `{ "created": 18, "skipped": 2, "errors":
 ["..."] }`.
 
-**Semântica (backend):** monta `Movement` com `TypePayment = credit_card`, `IsPaid = false` e
+> **AYD-007:** contrato inalterado; a guarda que pula itens marcados passa a cobrir também
+> `advance_payment`.
+
+**Semântica (backend):** pula itens que não pertencem à fatura — os que chegarem com
+`excluded: true` e os que a própria detecção identificar (ver §"Itens que não pertencem à
+fatura"), contabilizando-os em `skipped`. Para os demais, monta `Movement` com
+`TypePayment = credit_card`, `IsPaid = false` e
 `CreditCardInfo{CreditCardID, InvoiceID}`, delega à `InvoiceUseCase` para resolver/criar a
 fatura por data, somar em `invoice.Amount` e no limite do cartão. Itens parcelados geram a
 série via `GenerateInstallmentMovements`. Dedup por hash escopado por `credit_card_id`.
 
+Item com `installment_group_id` **vincula em vez de criar**: atualiza o valor da parcela
+daquela competência (ajuste por delta em `invoice.Amount` e no limite), não toca em descrição,
+data nem `is_paid`, e pula a série inteira — ver §"Parcelas já registradas no app". Vínculo
+inválido (grupo inexistente, de outro usuário ou de outro cartão) é rejeitado e o item cai no
+caminho normal de criação.
+
 **Erros adicionais:** `credit_card_id` ausente/inexistente (400/404); cartão sem carteira
-default e item sem wallet (400, `ErrCreditCardNoDefaultWallet`); estouro de limite (403,
-`ErrCreditCardLimitReached`); fatura alvo já paga (422).
+default e item sem wallet (400, `ErrCreditCardNoDefaultWallet`); estouro de limite do cartão (403,
+`ErrInsufficientCreditLimit`); fatura alvo já paga (422).
 
 **Contrato de erro global** (inalterado): `{ "error": { "code": 422, "message": "...", "type":
 "opcional" } }`. Clientes ramificam por `error.type` quando presente.
@@ -261,6 +515,24 @@ type ExtractedMovement struct {
     // ... campos atuais ...
     InstallmentNumber *int `json:"installment_number,omitempty"` // (novo)
     TotalInstallments *int `json:"total_installments,omitempty"` // (novo)
+    Excluded        bool   `json:"excluded,omitempty"`         // (novo) não pertence a esta fatura
+    ExclusionReason string `json:"exclusion_reason,omitempty"` // (novo) "invoice_payment" | "future_installment"
+    // (novo) reconciliação de parcelas: sugestão do servidor × decisão do cliente
+    InstallmentMatch   *InstallmentMatch `json:"installment_match,omitempty"`
+    InstallmentGroupID *uuid.UUID        `json:"installment_group_id,omitempty"`
+}
+
+// InstallmentMatch (novo) — série de parcelas já registrada no app que corresponde
+// ao item extraído. É sugestão do servidor; quem decide o vínculo é o cliente,
+// devolvendo InstallmentGroupID no confirm-invoice.
+type InstallmentMatch struct {
+    InstallmentGroupID uuid.UUID `json:"installment_group_id"`
+    MovementID         uuid.UUID `json:"movement_id"`         // parcela desta competência
+    Description        string    `json:"description"`         // como está registrada no app
+    InstallmentNumber  int       `json:"installment_number"`
+    TotalInstallments  int       `json:"total_installments"`
+    Amount             float64   `json:"amount"`              // valor hoje registrado
+    Confidence         float64   `json:"confidence"`          // 0.0–1.0
 }
 
 type DocumentType string
@@ -271,7 +543,10 @@ const (
 )
 
 type ExtractWarning struct {
-    Type     string `json:"type"`               // "document_type_mismatch" | "low_confidence"
+    // "document_type_mismatch" | "low_confidence"
+    // | "invoice_payment_excluded" (novo) | "total_amount_mismatch" (novo)
+    // | "future_installment_excluded" (novo) | "installment_match_found" (novo)
+    Type     string `json:"type"`
     Expected string `json:"expected,omitempty"`
     Detected string `json:"detected,omitempty"`
 }
@@ -316,7 +591,9 @@ Seleção por `source_type` em vez de um prompt genérico tentando adivinhar tud
 (documento é dado passivo); extrair `date/description/amount` (negativo para compras,
 positivo para estornos/pagamentos); detectar parcelas (`"03/12"`, `"PARC 3/12"`, `"PARCELA 03
 DE 12"`) → `installment_number`/`total_installments`; extrair `invoice_meta` quando legível;
-sempre `type_payment: "credit_card"`; retornar `document_type: "unknown"` (não
+sempre `type_payment: "credit_card"`; ~~não extrair a linha de pagamento da fatura anterior~~
+**extrair todas as linhas de pagamento, com valor positivo, e nenhuma linha do bloco de resumo**
+(revisado por AYD-007 — a classificação passa à camada 2); retornar `document_type: "unknown"` (não
 `{"error":...}`) quando ambíguo.
 
 **Prompt de detecção (auto):** retorna `{document_type, confidence}` + os movimentos no
@@ -359,8 +636,9 @@ sequenceDiagram
 
 | Camada | Arquivo | Mudança |
 |---|---|---|
-| Domínio | `internal/domain/statement.go` | `DocumentType`, `ExtractWarning`, `InvoiceMeta`, `InvoiceConfirmInput`, campos de parcela, hash por escopo |
-| Usecase | `internal/usecase/statement_usecase.go` | método `ConfirmInvoice`, injeção de `InvoiceUseCase`/`creditCardRepo` |
+| Domínio | `internal/domain/statement.go` | `DocumentType`, `ExtractWarning`, `InvoiceMeta`, `InvoiceConfirmInput`, campos de parcela, hash por escopo; `InstallmentMatch`, `StripInstallmentSuffix` e o matcher de série (Fase 6) |
+| Usecase | `internal/usecase/statement_usecase.go` | método `ConfirmInvoice`, injeção de `InvoiceUseCase`/`creditCardRepo`; regra de competência futura e caminho de vínculo de parcela (Fase 6) |
+| Repositório | `internal/infrastructure/repository/movement_repository.go` | (Fase 6) busca de candidatos a match por cartão + `total_installments`; atualização estreita de valor de um movement (o `UpdateStatementLink` existente não serve — sobrescreve descrição/data e força `is_paid`) |
 | Gateway | `internal/infrastructure/gateway/gemini_vision_gateway.go` | prompts de fatura/detecção, seleção por `source_type`, retorno de tipo/meta |
 | API | `internal/infrastructure/api/statement_api.go` | ler `source_type` no `/extract`; handler `ConfirmInvoice` |
 | Bootstrap | `internal/bootstrap/statement/setup.go` | wiring da `InvoiceUseCase` + `creditCardRepo` no `StatementUseCase` |
@@ -443,8 +721,20 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 4. **Chamar `/classify`** com os `movements` (igual para os dois tipos).
 5. **Bifurcar o confirm pelo tipo efetivo:** `statement` → `/confirm` (`wallet_id`); `invoice`
    → `/confirm-invoice` (`credit_card_id`, e `invoice_id` se a UI já tiver a fatura aberta).
-6. **Parcelas (invoice):** exibir `installment_number/total_installments`; avisar que a
-   compra parcelada gera N lançamentos futuros (a série completa é criada pelo backend).
+6. **Parcelas (invoice):** exibir `installment_number/total_installments`. Três estados, e
+   nenhum deles é um modal bloqueante — numa fatura de 70+ itens, uma pergunta por parcela
+   inviabiliza a revisão:
+   - `installment_group_id` preenchido ⇒ **já vinculado** a uma compra existente. Exibir como
+     estado resolvido (chip "parcela 4/12 · já registrada", no mesmo lugar do chip de
+     recorrência), com "desvincular" a um toque — desvincular volta a criar a série.
+   - `installment_match` presente sem `installment_group_id` ⇒ **sugestão**: "parece a parcela
+     4/12 de «TV da sala»", um toque para aceitar.
+   - Nenhum dos dois ⇒ avisar que a compra parcelada gera N lançamentos futuros (a série
+     completa é criada pelo backend), e oferecer **vinculação manual** para o que o matcher não
+     pegou — sheet nos moldes do `RecurrenceLinkSheet` do mobile.
+
+   Mostrar um resumo no topo da revisão ("3 compras parceladas já registradas serão
+   vinculadas"): a mudança silenciosa é a mais perigosa.
 7. **Correlação:** enviar `X-Request-ID` no `fetcher.ts` de cada repo também nessas chamadas,
    por consistência com o contrato de correlação definido em AYD-002.
 
@@ -457,6 +747,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | 3 — Persistência de fatura | `InvoiceConfirmInput` + `StatementUseCase.ConfirmInvoice`; endpoint `confirm-invoice`; hash por `credit_card_id`; wiring; testes | Não (novo endpoint) | M |
 | 4 — Frontends | Web e mobile: `source_type`, tratamento de `warnings`, bifurcação do confirm, UI de parcelas, entrada "Importar fatura" a partir da tela de cartões (ver §"Implementação por repo") | Consome contrato | M |
 | 5 — Endurecimento | Validação do total (`invoice_meta.total_amount` × soma dos itens) como warning; métricas de negócio (`biz_invoice_imports_total`); telemetria de mismatch | Não | S |
+| 6 — Reconciliação de parcelas | Regra de competência futura (`future_installment`); `StripInstallmentSuffix` + matcher de série existente; `installment_match`/`installment_group_id` no contrato; vínculo com atualização de valor por delta e skip da série; UI de vínculo em web e mobile | Não (aditivo) | M |
 
 ## Riscos e mitigações
 
@@ -465,9 +756,12 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | IA classifica tipo errado (bancos heterogêneos) | Defesa em camadas: intenção + detecção + warning de mismatch; nunca decide sozinha o `confirm` |
 | Parcelas mal interpretadas (formatos variados de "x/y") | Prompt com exemplos múltiplos; campos opcionais — na dúvida, importa como lançamento simples; UI permite revisar antes do confirm |
 | Import duplicado ao reenviar a mesma fatura | Hash de idempotência por `credit_card_id` + dedup (mesma estratégia já provada no statement) |
-| Total da fatura não bate com soma dos itens (OCR perdeu linha) | Fase 5: compara `invoice_meta.total_amount` com a soma; divergência vira warning, não bloqueio |
+| Total da fatura não bate com soma dos itens (OCR perdeu linha) | Compara `invoice_meta.total_amount` com a soma dos itens não-marcados; divergência vira warning `total_amount_mismatch`, não bloqueio |
+| Pagamento da fatura anterior importado como despesa (infla fatura e consome limite) | Defesa em três camadas (prompt + guarda determinística + checksum), item marcado e não removido, `confirm-invoice` reaplica a detecção — ver §"Itens que não pertencem à fatura" |
+| Match de parcela vincula à compra errada (falso-positivo) | Assinatura apertada (cartão + `total_installments` + valor com tolerância + raiz da descrição); só confiança alta vem pré-vinculada, média vira sugestão; a UI mostra a qual compra está vinculando e permite desvincular antes do confirm |
+| Match perdido duplica a série inteira (infla fatura e consome limite) | Regra de competência futura resolve o caso mais comum sem matching; checksum de total (`total_amount_mismatch`) pega o resíduo; `skipped` contabiliza a série inteira |
 | Importar em fatura já paga/fechada | `ConfirmInvoice` valida status da invoice (`ErrInvoiceCannotModify`/`ErrInvoiceAlreadyPaid`) |
-| Estouro de limite ao importar fatura grande | Reusa `validateCreditLimit` da `InvoiceUseCase`; `ErrCreditCardLimitReached` (403) |
+| Estouro de limite ao importar fatura grande | Reusa a regra de `domain.CreditCard.HasSufficientLimit`, a mesma do lançamento manual (`Movement.validateCreditLimit`); `ErrInsufficientCreditLimit` (403). **Não** é `ErrCreditCardLimitReached` — esse identificador já existe no código com outro significado (teto de cartões do **plano**), e reusá-lo mostraria mensagem de quota num estouro de limite do cartão (corrigido em set/2026) |
 | Custo de LLM sobe com dois prompts | Modo auto faz detecção+extração num único call; tokens medidos por feature (`invoice_extract`) |
 | Frontends antigos quebrarem | Tudo aditivo; ausência de `source_type` = comportamento atual (statement) |
 | Tipos `ExtractedMovement` já divergentes entre web/mobile (ver §"Implementação por repo") | Alinhar os três ao contrato desta seção na SPEC@web/SPEC@mobile, antes de empilhar campos novos |
@@ -484,6 +778,9 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 | 3 | **Validação de total:** divergência entre `invoice_meta.total_amount` e a soma dos itens vira **warning informativo** (não bloqueia); usuário decide importar mesmo assim. Implementada na Fase 5. |
 | 4 | **Modo auto (sem `source_type`):** roda detecção da IA; quando o resultado for `unknown`, o `confirm` legado trata como `statement`, preservando clientes atuais. |
 | 5 | **Sinal do `amount` na fatura:** despesa **negativa** (compras `-`, estornos/pagamentos `+`), consistente com o resto do app (`movement.go` usa `amount < 0` como despesa). |
+| 6 | **Pagamento da fatura anterior não é item de fatura** (ago/2026): detectado em três camadas, **marcado e não removido** (`excluded`/`exclusion_reason`), com `confirm-invoice` reaplicando a detecção. Descartado remover silenciosamente da lista — falso-positivo faria o lançamento sumir sem rastro. Ver §"Itens que não pertencem à fatura". |
+| 7 | **Parcelas de competência futura não são itens desta fatura** (ago/2026): resolvidas por **período da fatura** (`date > invoice.PeriodEnd`, já derivado do dia de fechamento do cartão), não por matching — `excluded` + `exclusion_reason: "future_installment"`. Mesmo tratamento do pagamento: marca, não remove. **Vale só para itens PARCELADOS** (com `installment_number` + `total_installments`) — esclarecido em set/2026: uma compra comum datada depois do fechamento pertence à fatura seguinte e é parenteada corretamente pela resolução por data da Decisão 2 ("cobre faturas que cruzam o fechamento"); marcá-la a faria sumir do import. |
+| 8 | **Vínculo de parcela já registrada** (ago/2026): quando o item extraído corresponde a uma série existente, o `confirm-invoice` **atualiza o valor** da parcela daquela competência — parcelamentos variam centavos entre parcelas e a fatura é a fonte de verdade — e **pula a série inteira**, sem criar nada. Não altera `description`, `date` nem `is_paid`. Confiança alta vem pré-vinculada; média vira sugestão; a UI nunca bloqueia com modal por item. Ver §"Parcelas já registradas no app". |
 
 ## Vocabulário específico deste contrato
 
@@ -495,6 +792,8 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 |---|---|
 | `document_type` | Enum que diferencia o documento importado (`statement`/`invoice`/`unknown`); resultado da **detecção** pela IA. |
 | `source_type` | Intenção declarada pelo **cliente** no `/extract` (qual tipo ele acha que está enviando); reconciliada com `document_type` (ver matriz de reconciliação). |
+| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (`invoice_payment` — pagamento da fatura anterior; `future_installment` — parcela de competência posterior ao fechamento; `advance_payment` — adiantamento desta fatura, filtrado e usado só na conferência do total, AYD-007). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
+| `installment_match` / `installment_group_id` | `installment_match` é a **sugestão** do servidor de que o item extraído corresponde a uma série de parcelas já registrada no app; `installment_group_id` no item é a **decisão** que o cliente devolve no `confirm-invoice`, efetivando o vínculo. Mesma separação sugestão/decisão do `recurrence_id` no caminho statement. |
 
 ## Decisões relacionadas
 
@@ -507,12 +806,62 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 
 ## Fora de escopo / questões em aberto
 
-- [ ] **SPEC@api** — escrever a partir deste AYD antes de implementar as Fases 1–3.
-- [ ] **SPEC@web / SPEC@mobile** — formalizar o desenho de tela/componente da Fase 4 (hoje só
-      o guia genérico de integração e o mapa de código atual, sem rota/label/wireframe
-      definidos); resolver a divergência de tipos `ExtractedMovement` apontada em
-      §"Implementação por repo" como parte da SPEC.
-- [ ] **Fase 5 (endurecimento)** — validação de total e métricas de negócio do import de
-      fatura; pendente, não bloqueia as Fases 1–4.
+- [x] **SPEC@api** — SPEC-001@api criada; Phases 1–3 implementadas e testadas (22 testes passando).
+- [x] **SPEC@web / SPEC@mobile** — SPEC-001@web e SPEC-001@mobile criadas; Phase 4 implementada.
+- [ ] **Divergência de tipos `ExtractedMovement` entre web e mobile** — **NÃO resolvida**, ao
+      contrário do que este item afirmava até set/2026. Cada cliente carrega campos locais
+      próprios (web: `recurrentMatch`, `confidence`, `classificationSource`; mobile:
+      `recurrence_id`, `recurrence_title`) e nenhum dos dois é 1:1 com o
+      `domain.ExtractedMovement`@api. A SPEC-001@web sempre registrou isso como questão em
+      aberto — era o AYD e o changelog@context que divergiam dela.
+- [ ] **`creditCardId` no `invoice-summary-card`@web** — card de resumo total não expõe o ID do cartão; solução a definir na SPEC@web (passar via props do `credit-cards/page.tsx` ou reestruturar o componente).
+- [x] **Validação de total (parte da Fase 5)** — `total_amount_mismatch` implementado junto com
+      a exclusão do pagamento de fatura (ago/2026). Métricas de negócio do import seguem
+      pendentes; não bloqueiam as Fases 1–4.
+- [x] **Parcelas de competência futura e séries já registradas** — desenho fechado em
+      §"Parcelas já registradas no app" (Decisões 7 e 8): competência futura vira
+      `exclusion_reason: "future_installment"` por regra de período; série existente vira
+      vínculo com atualização de valor e skip da série. **Implementação pendente** — Fase 6,
+      nos três repos.
+- [x] **Índices ausentes em `movements`** — resolvido em ago/2026 (migration `027`@api):
+      `idx_movements_idempotency_hash` sobre `(user_id, idempotency_hash)` e
+      `idx_movements_installment_group` sobre `(installment_group_id, installment_number)`,
+      ambos parciais (`WHERE ... IS NOT NULL`). A `019` criava a coluna do hash e o seu
+      `down` já dropava um índice que o `up` nunca chegou a criar.
+- [x] **`confirm-invoice` sem transação por item** — resolvido em ago/2026 (`api`): gravação
+      do movimento, atualização do total da fatura e ajuste do limite do cartão passam a rodar
+      numa transação única por item, e a série de parcelas numa transação única por série
+      (ver §"Atomicidade da persistência").
+### Achados de set/2026 — levantados na revisão de código, ainda sem decisão
+
+> Mapeados lendo o código das Fases 1–5, **não cobertos por nenhuma decisão deste AYD**.
+> Registrados aqui para não se perderem; cada um precisa virar decisão antes de virar código.
+
+- [ ] **Estorno positivo é classificado como receita.** `resolveCategoryID`@api escolhe a
+      categoria pelo sinal (`amount > 0` ⇒ *Uncategorized Income*). Um estorno de cartão é
+      **redução de despesa**, não entrada — classificá-lo como receita distorce os agregados
+      do AYD-003. A Decisão 5 fixou o **sinal** dos estornos, mas não a **categorização**.
+- [ ] **Limites de plano não se aplicam ao import de fatura.** `ConfirmInvoice` não chama
+      `limitsValidator.ValidateMovementCreation`, que o `Confirm` do caminho statement chama:
+      um usuário `free` fura o teto mensal de `Movement` importando fatura. Decidir se o teto
+      vale por item importado, por import, ou não vale para import.
+- [ ] **`invoice_id` como override derrota a resolução por data.**
+      `FindOrCreateInvoiceForMovement` retorna a fatura do override **antes** de olhar a data
+      do item, e o mobile sempre envia `invoice_id` (a fatura aberta na tela). Todo item não
+      parcelado cai naquela fatura, mesmo datado fora do período dela. A Decisão 2 previu o
+      override como conveniência, sem definir se ele vale para o request inteiro ou só como
+      fallback quando a data não resolve. A regra de competência futura (Fase 6) mitiga o caso
+      para frente, não para trás.
+- [ ] **Fatura já paga derruba o import no meio.** `ConfirmInvoice` retorna
+      `ErrInvoiceAlreadyPaid` ao encontrar a primeira fatura paga — com N itens já
+      persistidos e sem rollback. Contradiz a §"Atomicidade da persistência", que declara o
+      sucesso parcial por item como comportamento desejado. Decidir qual regra vence.
+- [ ] **Reimport de correção não especificado.** Reenviar a mesma fatura depois de o OCR ter
+      perdido linhas: o dedup por hash pula as já importadas e cria só as que faltavam.
+      Funciona na prática, mas não está no contrato nem coberto por teste.
+- [ ] **Interação entre fatura importada e o pagamento dela (AYD-003).** Quando o usuário
+      paga uma fatura cujos itens vieram de import, falta descrever como o `Movement` de
+      `invoice_payment` se relaciona com esses itens no recorte canônico de "realizado".
+
 - [ ] **Heurísticas estruturais** (§"Estratégia de diferenciação") — mencionadas como reforço
       opcional e barato, mas não fazem parte do contrato; decidir se entram numa fase futura.
