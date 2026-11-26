@@ -271,8 +271,10 @@ primeira delas — presente em praticamente toda fatura — é o **pagamento da 
 > bancos (Mercado Pago) que listam na fatura os **adiantamentos da própria fatura**. O
 > AYD-007 revisa a camada 1 (o prompt passa a extrair todas as linhas de pagamento, positivas),
 > estende a camada 2 (classificação por data em `invoice_payment` × `advance_payment`) e a
-> camada 3 (checksum soma os adiantamentos), e acrescenta `advance_payments[]` ao
-> `confirm-invoice`. O contrato desse delta vive em AYD-007 §"Ajuste no import de fatura".
+> camada 3 (checksum soma os adiantamentos). As duas classes continuam **filtradas**: o import
+> da fatura nunca registra pagamento — ele nasce do botão ou do import do extrato bancário.
+> O contrato desse delta vive em AYD-007 §"Import da fatura do cartão — linhas de pagamento
+> filtradas".
 
 **Por que não pode entrar:** o pagamento de fatura já é modelado **fora** da `Invoice`, como um
 `Movement` de `type_payment = invoice_payment` sobre a `Wallet` que pagou — e o recorte
@@ -308,7 +310,7 @@ ele **reaplica a detecção** e pula o que identificar, contabilizando em `skipp
 que ignore o campo novo não consegue corromper a fatura.
 
 **`exclusion_reason` é um enum extensível.** Hoje `invoice_payment`, `future_installment`
-(definido na seção seguinte) e `advance_payment` (adiantamento desta fatura — AYD-007).
+(definido na seção seguinte) e `advance_payment` (adiantamento desta fatura, também filtrado — AYD-007).
 
 ### Parcelas já registradas no app *(novo)*
 
@@ -481,8 +483,8 @@ confidence, source}] }`, `source` ∈ `"history" | "ai"`. Igual para itens de ex
 **Response** (mesmo shape do confirm de statement): `{ "created": 18, "skipped": 2, "errors":
 ["..."] }`.
 
-> **AYD-007:** o request ganha `advance_payments[]` (opcional) e a response
-> `advance_payments_created`; ver AYD-007 §"Ajuste no import de fatura".
+> **AYD-007:** contrato inalterado; a guarda que pula itens marcados passa a cobrir também
+> `advance_payment`.
 
 **Semântica (backend):** pula itens que não pertencem à fatura — os que chegarem com
 `excluded: true` e os que a própria detecção identificar (ver §"Itens que não pertencem à
@@ -790,7 +792,7 @@ página `app/credit-cards/page.tsx` — hoje sem nenhuma ação de import.
 |---|---|
 | `document_type` | Enum que diferencia o documento importado (`statement`/`invoice`/`unknown`); resultado da **detecção** pela IA. |
 | `source_type` | Intenção declarada pelo **cliente** no `/extract` (qual tipo ele acha que está enviando); reconciliada com `document_type` (ver matriz de reconciliação). |
-| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (`invoice_payment` — pagamento da fatura anterior; `future_installment` — parcela de competência posterior ao fechamento; `advance_payment` — adiantamento desta fatura, registrado à parte via `advance_payments[]`, AYD-007). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
+| `excluded` / `exclusion_reason` | Marca um item extraído que **não pertence à fatura** (`invoice_payment` — pagamento da fatura anterior; `future_installment` — parcela de competência posterior ao fechamento; `advance_payment` — adiantamento desta fatura, filtrado e usado só na conferência do total, AYD-007). O item continua na resposta; quem o descarta do import é a UI e, defensivamente, o `confirm-invoice`. |
 | `installment_match` / `installment_group_id` | `installment_match` é a **sugestão** do servidor de que o item extraído corresponde a uma série de parcelas já registrada no app; `installment_group_id` no item é a **decisão** que o cliente devolve no `confirm-invoice`, efetivando o vínculo. Mesma separação sugestão/decisão do `recurrence_id` no caminho statement. |
 
 ## Decisões relacionadas

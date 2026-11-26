@@ -31,8 +31,8 @@ repo adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
 - Added AYD-007: credit card invoice advance payments (paying part of an open invoice before
-  settling it), covering api, web and mobile; invoice import now tells this invoice's advance
-  payments apart from the previous invoice's payment.
+  settling it), covering api, web and mobile; card payments in a bank statement import become
+  the invoice's payment, and the card invoice import filters every payment line.
 - Added SPEC-001 in api, web and mobile for AYD-004 (invoice import), now covering the whole design: the api extracts and persists a credit card invoice reusing the existing invoice rules, the previous invoice's payment and installments belonging to later invoices are flagged instead of silently dropped, and installments already registered in the app are linked and repriced instead of duplicated; web and mobile review the extracted items, show the invoice metadata and every non-fatal warning, and let the user reinclude a flagged item or accept, undo and set an installment link by hand. AYD-004 also gained the optional `credit_card_id` on `/extract` (without it the server cannot derive the invoice period or search existing series, so the enrichment degrades and `confirm-invoice` reapplies the rules defensively), restricted the future-competence rule to installments so an ordinary purchase dated after the closing day still reaches the next invoice, and corrected the credit-limit error name. Open items found while reading the code — a positive refund classified as income, plan limits not applied to invoice import, `invoice_id` overriding date-based invoice resolution, a paid invoice aborting the import midway, correction reimports and the interaction with invoice payment in AYD-003 — are recorded as questions, not implemented.
 - Updated AYD-003 (financial analytics): the client-side actions of the 24/Aug/2026
   divergence are done on web and mobile — positive categories no longer render as spending
