@@ -3,7 +3,7 @@ id: MANIFEST
 type: meta
 title: Manifesto / Índice do produto
 status: approved
-updated: 2026-08-24
+updated: 2026-11-26
 owner: Silvio Ubaldino
 ---
 
@@ -14,13 +14,13 @@ owner: Silvio Ubaldino
 ## Estado do produto
 - **Produto:** Personal Finance
 - **Repos:** context (este) · api (`personal-finance`) · web (`personal-finance-frontend-v2`) · mobile (`personal-finance-mobile`)
-- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento (sem SPEC), AYD-003 análises financeiras (com SPEC nos três repos), AYD-004 import de fatura de cartão (SPEC-001 nos três repos, em implementação), AYD-005 transferência interna (parcialmente implementada, com SPEC no mobile), AYD-005 planejamentos orçado×realizado, AYD-006 categoria de fallback do import; ROAD e ADRs ainda pendentes)
+- **Fase atual:** Execução — produto em produção (com cobrança via Stripe/RevenueCat); documentação compartilhada em backfill (PROD/REQ/GLO preenchidos; AYDs reais registrados — AYD-002 monitoramento (sem SPEC), AYD-003 análises financeiras (com SPEC nos três repos), AYD-004 import de fatura de cartão (SPEC-001 nos três repos, em implementação), AYD-005 transferência interna (parcialmente implementada, com SPEC no mobile), AYD-005 planejamentos orçado×realizado, AYD-006 categoria de fallback do import, AYD-007 adiantamento de fatura (em design, sem SPEC); ROAD e ADRs ainda pendentes)
 
 ## Grafo de documentos
 | Camada | ID | Documento | Status | Refina | Detalhado por |
 |--------|----|-----------|--------|--------|----------------|
 | Produto      | PROD-001 | Visão & estratégia | draft    | —        | REQ-001 |
-| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003, AYD-004, AYD-005, AYD-006 |
+| Requisitos   | REQ-001  | Requisitos         | draft    | PROD-001 | AYD-002, AYD-003, AYD-004, AYD-005, AYD-006, AYD-007 |
 | Design       | AYD-001  | (exemplo) Feature  | draft    | REQ-001  | SPEC-001@api, SPEC-001@web |
 | Design       | AYD-002  | Monitoramento e observabilidade | draft | REQ-001 | — (nenhuma SPEC formal ainda) |
 | Design       | AYD-003  | Análises financeiras (visão ao longo do tempo) | draft | REQ-001 | SPEC-002@api, SPEC-002@mobile, SPEC-002@web |
@@ -28,6 +28,7 @@ owner: Silvio Ubaldino
 | Design       | AYD-005  | Transferência interna entre carteiras | draft | REQ-001 | SPEC-003@mobile |
 | Design       | AYD-005  | Planejamentos — orçado × realizado (agregação no servidor) | draft | REQ-001 | — (nenhuma SPEC ainda) |
 | Design       | AYD-006  | Categoria de fallback do import (entrada não categorizada) | draft | REQ-001 | — (nenhuma SPEC ainda) |
+| Design       | AYD-007  | Adiantamento de fatura de cartão de crédito | draft | REQ-001 | — (nenhuma SPEC ainda) |
 | Roadmap      | ROAD-001 | Roadmap            | draft    | PROD-001 | — |
 | Decisão prod | PDR-001  | (exemplo)          | accepted | —        | — |
 | Decisão arq  | ADR-001  | (exemplo)          | accepted | —        | — |
@@ -60,8 +61,10 @@ PROD-001
    │          │  │                                                        ├─ SPEC-005@web    (fase 3.5)
    │          │  │                                                        └─ SPEC-006@api    (fase 4)
    │          │  └ compartilha a definição de "realizado" com AYD-003
-   │          └ AYD-006 (categoria de fallback do import, real, em design) ─ (sem SPEC ainda)
-   │             └ causa raiz da divergência registrada em AYD-003
+   │          ├ AYD-006 (categoria de fallback do import, real, em design) ─ (sem SPEC ainda)
+   │          │  └ causa raiz da divergência registrada em AYD-003
+   │          └ AYD-007 (adiantamento de fatura, real, em design) ─ (sem SPEC ainda)
+   │             └ revisa as camadas de "itens que não pertencem à fatura" do AYD-004
    └─ ROAD-001
 (PDR / ADR / ARCH / GLO referenciados transversalmente por todos)
  ARCH = topologia vigente (C4 vivo); atualizado quando entra/sai serviço ou integração.
